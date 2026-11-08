@@ -1,0 +1,2773 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chifa Dragón Dorado - Pedidos Online & Gestión</title>
+  
+  <!-- Tipografía Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Firebase SDKs (Google Cloud Firestore & Auth) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, doc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Variables de configuración de Firebase del entorno o valores por defecto
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'chifa-dragon-dorado';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' 
+      ? JSON.parse(__firebase_config) 
+      : {
+          apiKey: "AIzaSyDemoKeyForPlaceholderOnly12345678",
+          authDomain: "chifa-app-demo.firebaseapp.com",
+          projectId: "chifa-app-demo",
+          storageBucket: "chifa-app-demo.appspot.com",
+          messagingSenderId: "123456789012",
+          appId: "1:123456789012:web:abcdef123456"
+        };
+
+    let app, db, auth;
+    let isCloudReady = false;
+
+    try {
+      app = initializeApp(firebaseConfig);
+      db = getFirestore(app);
+      auth = getAuth(app);
+    } catch (e) {
+      console.warn("Firebase no configurado o clave placeholder:", e);
+    }
+
+    // Exportar al scope global para sincronización con la app
+    window.dbService = {
+      isReady: () => isCloudReady,
+      appId: appId,
+      db: db,
+      auth: auth,
+      collection: collection,
+      doc: doc,
+      getDocs: getDocs,
+      setDoc: setDoc,
+      updateDoc: updateDoc,
+      deleteDoc: deleteDoc,
+      onSnapshot: onSnapshot,
+      saveDoc: async (colName, docId, data) => {
+        if (!isCloudReady || !db) return false;
+        try {
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', colName, docId);
+          await setDoc(docRef, data, { merge: true });
+          return true;
+        } catch (err) {
+          console.error(`Error guardando en Firestore (${colName}/${docId}):`, err);
+          return false;
+        }
+      },
+      deleteRecord: async (colName, docId) => {
+        if (!isCloudReady || !db) return false;
+        try {
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', colName, docId);
+          await deleteDoc(docRef);
+          return true;
+        } catch (err) {
+          console.error(`Error eliminando en Firestore:`, err);
+          return false;
+        }
+      }
+    };
+
+    // Autenticación asíncrona antes de cualquier consulta a Firestore
+    async function initCloudAuth() {
+      if (!auth) return;
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+        isCloudReady = true;
+        document.dispatchEvent(new CustomEvent('cloud-db-ready'));
+      } catch (err) {
+        console.warn("Modo local activo (no se pudo conectar a Firebase Cloud):", err.message);
+      }
+    }
+
+    initCloudAuth();
+  </script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            display: ['"Cinzel"', 'serif'],
+          },
+          colors: {
+            chifa: {
+              50: '#fef2f2',
+              100: '#fee2e2',
+              500: '#ef4444',
+              600: '#dc2626',
+              700: '#b91c1c',
+              800: '#991b1b',
+              900: '#7f1d1d',
+              950: '#450a0a'
+            },
+            gold: {
+              400: '#facc15',
+              500: '#eab308',
+              600: '#ca8a04',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Estilos personalizados y utilidades de scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1e1e24; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    .gold-gradient {
+      background: linear-gradient(135deg, #facc15 0%, #ca8a04 100%);
+    }
+    .red-gradient {
+      background: linear-gradient(135deg, #b91c1c 0%, #450a0a 100%);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col selection:bg-chifa-600 selection:text-white">
+
+  <!-- ======================================================== -->
+  <!-- TOAST NOTIFICACIONES FLOTANTES                           -->
+  <!-- ======================================================== -->
+  <div id="toast" class="fixed top-5 right-5 z-[9999] pointer-events-none transition-all duration-300 opacity-0 transform -translate-y-4 max-w-sm w-full bg-slate-900 border border-slate-700 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3">
+    <div id="toast-icon-wrap" class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+      <i data-lucide="check-circle" class="w-5 h-5"></i>
+    </div>
+    <div class="flex-1 text-sm font-medium" id="toast-message">Operación exitosa</div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- HEADER & BARRA DE NAVEGACIÓN UNIVERSAL                  -->
+  <!-- ======================================================== -->
+  <header class="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md border-b border-slate-800 transition-all">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
+      
+      <!-- Logo y Nombre del Chifa -->
+      <div class="flex items-center gap-3.5 cursor-pointer" onclick="switchView('store')">
+        <div id="restaurant-logo-container" class="w-12 h-12 rounded-2xl bg-gradient-to-br from-chifa-700 to-amber-700 p-0.5 shadow-lg shadow-chifa-950 flex items-center justify-center overflow-hidden">
+          <img id="nav-brand-logo" src="" alt="Logo Chifa" class="w-full h-full object-cover hidden rounded-[14px]">
+          <span id="nav-brand-fallback" class="font-display font-black text-gold-400 text-xl tracking-wider">🥮</span>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 id="nav-brand-name" class="font-display font-extrabold text-lg sm:text-xl text-white tracking-wide leading-tight">CHIFA DRAGÓN</h1>
+            <span class="text-[10px] bg-gold-500/20 text-gold-400 px-2 py-0.5 rounded-full border border-gold-500/30 uppercase font-bold tracking-widest hidden sm:inline-block">Tradición & Wok</span>
+          </div>
+          <p id="nav-brand-slogan" class="text-xs text-slate-400 font-medium">Sabor auténtico chifa a tu hogar</p>
+        </div>
+      </div>
+
+      <!-- Navegación y Switch Tienda / Backend -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        <!-- Modo Tienda Botón Carrito -->
+        <div id="nav-store-actions" class="flex items-center gap-2">
+          <button 
+            onclick="toggleCart(true)" 
+            class="relative flex items-center gap-2 px-4 py-2.5 rounded-xl bg-chifa-900/60 hover:bg-chifa-800 text-gold-400 border border-chifa-700/50 shadow-sm transition-all text-sm font-semibold active:scale-95"
+          >
+            <i data-lucide="shopping-bag" class="w-4 h-4"></i>
+            <span class="hidden md:inline">Ver Pedido</span>
+            <span id="cart-counter-badge" class="px-2 py-0.5 text-xs font-black bg-chifa-600 text-white rounded-full">0</span>
+          </button>
+        </div>
+
+        <!-- Botón Acceso Backend / Salir -->
+        <div id="nav-auth-actions" class="flex items-center gap-2">
+          <button 
+            id="btn-nav-admin"
+            onclick="handleAdminNavClick()" 
+            class="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all"
+          >
+            <i data-lucide="lock" class="w-4 h-4 text-gold-400"></i>
+            <span id="btn-admin-label">Panel Admin</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ======================================================== -->
+  <!-- VISTA 1: TIENDA ONLINE CHIFA (FRONTEND CLIENTES)         -->
+  <!-- ======================================================== -->
+  <main id="view-store" class="flex-1 w-full flex flex-col">
+    
+    <!-- Hero Banner Chifa -->
+    <section class="relative bg-gradient-to-r from-chifa-950 via-slate-950 to-neutral-950 py-10 px-4 sm:px-6 lg:px-8 border-b border-chifa-900/40 overflow-hidden">
+      <div class="absolute -right-20 -top-20 w-96 h-96 bg-chifa-600/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute left-1/3 -bottom-20 w-80 h-80 bg-gold-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+        <div class="max-w-2xl text-center md:text-left">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-chifa-900/80 text-gold-400 border border-gold-500/30 mb-3">
+            <span>🥢</span> Especialistas en Arroz Chaufa, Aeropuertos & Tipakay
+          </div>
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold text-white tracking-tight leading-tight">
+            El Sabor del <span class="text-transparent bg-clip-text bg-gradient-to-r from-gold-400 to-amber-500">Wok Oriental</span> en tu mesa
+          </h2>
+          <p class="text-slate-400 text-sm sm:text-base mt-2 max-w-xl">
+            Platos preparados al fuego vivo con los ingredientes más frescos. Agrega tus extras favoritos y recíbelo caliente en tu puerta.
+          </p>
+        </div>
+
+        <!-- Tarjetas de Información Rápida -->
+        <div class="grid grid-cols-2 gap-3 w-full md:w-auto text-xs sm:text-sm">
+          <div class="bg-slate-900/80 backdrop-blur p-4 rounded-2xl border border-slate-800 text-center">
+            <div class="text-gold-400 font-bold text-lg flex items-center justify-center gap-1">
+              <i data-lucide="clock" class="w-4 h-4"></i> 30-45m
+            </div>
+            <p class="text-slate-400 text-xs mt-0.5">Tiempo estimado</p>
+          </div>
+          <div class="bg-slate-900/80 backdrop-blur p-4 rounded-2xl border border-slate-800 text-center">
+            <div class="text-emerald-400 font-bold text-lg flex items-center justify-center gap-1">
+              <i data-lucide="bike" class="w-4 h-4"></i> <span id="hero-shipping-display">$2.00</span>
+            </div>
+            <p class="text-slate-400 text-xs mt-0.5">Costo de despacho</p>
+          </div>
+          <div class="col-span-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800/80 text-center flex items-center justify-center gap-2 text-[11px] text-slate-400">
+            <span id="cloud-status-indicator" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            <span id="cloud-status-text">Sincronizando con Base de Datos Google Firestore...</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Contenedor Principal: Filtros y Catálogo -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-6">
+
+      <!-- Barra de Filtros y Búsqueda -->
+      <div class="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
+        <!-- Buscador -->
+        <div class="relative flex-1 max-w-lg">
+          <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2"></i>
+          <input 
+            type="text" 
+            id="store-search-input" 
+            placeholder="Buscar chaufa, wantanes, tallarines, tipakay..." 
+            class="w-full pl-11 pr-4 py-3 bg-slate-900 border border-slate-800 rounded-2xl text-sm focus:outline-none focus:border-gold-500/80 focus:ring-2 focus:ring-gold-500/20 text-white placeholder-slate-500 transition-all"
+            oninput="handleStoreSearch(this.value)"
+          >
+        </div>
+
+        <!-- Filtros de Subcategorías Dinámicas -->
+        <div id="subcategories-filter-bar" class="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+          <!-- Inyectado dinámicamente -->
+        </div>
+      </div>
+
+      <!-- Barra de Categorías Principales con Tabs -->
+      <div class="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-800" id="categories-tabs-bar">
+        <!-- Se inyectan las categorías -->
+      </div>
+
+      <!-- Grid de Productos -->
+      <div id="store-products-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pt-2">
+        <!-- Inyectado dinámicamente -->
+      </div>
+
+      <!-- Estado Vacío -->
+      <div id="store-empty-catalog" class="hidden flex-col items-center justify-center py-20 text-center">
+        <div class="w-20 h-20 rounded-3xl bg-slate-900 text-slate-500 flex items-center justify-center mb-4 text-3xl">
+          🥢
+        </div>
+        <h4 class="text-lg font-bold text-white">No encontramos productos</h4>
+        <p class="text-sm text-slate-400 mt-1 max-w-sm">Intenta con otra palabra clave o selecciona otra categoría del Chifa.</p>
+        <button onclick="resetStoreFilters()" class="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gold-400 text-xs font-bold rounded-xl transition-all">
+          Ver todo el menú
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Barra Inferior Flotante Móvil para Carrito -->
+    <div id="mobile-cart-strip" class="md:hidden fixed bottom-0 inset-x-0 bg-slate-950/95 backdrop-blur-lg border-t border-slate-800 p-3 z-30 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-chifa-600 flex items-center justify-center text-white font-bold relative">
+          <i data-lucide="shopping-cart" class="w-5 h-5"></i>
+          <span id="mobile-strip-badge" class="absolute -top-1.5 -right-1.5 bg-gold-500 text-slate-950 text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">0</span>
+        </div>
+        <div>
+          <span class="text-[10px] text-slate-400 uppercase tracking-wider block">Total Pedido</span>
+          <span id="mobile-strip-total" class="font-extrabold text-gold-400 text-base leading-none">$0.00</span>
+        </div>
+      </div>
+      <button 
+        onclick="toggleCart(true)"
+        class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-chifa-600 to-chifa-700 text-white font-bold text-xs shadow-lg shadow-chifa-950 active:scale-95 flex items-center gap-2"
+      >
+        <span>Revisar Pedido</span>
+        <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+      </button>
+    </div>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: DETALLE DE PRODUCTO Y SELECCIÓN DE EXTRAS         -->
+  <!-- ======================================================== -->
+  <div id="modal-product-extras" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl my-6 flex flex-col max-h-[90vh]">
+      
+      <!-- Imagen y Cabecera Modal -->
+      <div class="relative h-48 sm:h-56 w-full bg-slate-950 overflow-hidden shrink-0">
+        <img id="modal-product-img" src="" alt="Plato Chifa" class="w-full h-full object-cover">
+        <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-black/40"></div>
+        <button onclick="closeProductModal()" class="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+        <span id="modal-product-category" class="absolute bottom-3 left-4 text-xs font-bold text-gold-400 bg-black/60 backdrop-blur px-3 py-1 rounded-full border border-gold-500/20">
+          Chaulafanes
+        </span>
+      </div>
+
+      <!-- Cuerpo del Producto -->
+      <div class="p-5 flex-1 overflow-y-auto space-y-4">
+        <div>
+          <div class="flex items-start justify-between gap-3">
+            <h3 id="modal-product-title" class="text-xl font-bold text-white font-display">Chaufa Especial de Mariscos</h3>
+            <span id="modal-product-price" class="text-xl font-black text-gold-400 shrink-0">$8.50</span>
+          </div>
+          <p id="modal-product-desc" class="text-xs text-slate-400 mt-1.5 leading-relaxed">
+            Arroz frito al wok con camarones, calamares frescos, cebollino chino, pimientos y tortilla de huevo.
+          </p>
+        </div>
+
+        <!-- Sección de Extras y Acompañamientos -->
+        <div class="pt-3 border-t border-slate-800">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+              <span>🥢</span> Personaliza tu Plato con Extras
+            </h4>
+            <span class="text-[10px] text-slate-500 font-medium">Opcional</span>
+          </div>
+          
+          <div id="modal-extras-list" class="space-y-2">
+            <!-- Lista interactiva de checkboxes de extras -->
+          </div>
+        </div>
+
+        <!-- Instrucción o nota para la cocina -->
+        <div class="pt-2">
+          <label class="block text-xs font-semibold text-slate-400 mb-1" for="modal-item-notes">
+            Indicación para la cocina (Opcional):
+          </label>
+          <input 
+            type="text" 
+            id="modal-item-notes" 
+            placeholder="Ej: Sin cebollín chino / salsa tamarindo aparte / bien tostado..." 
+            class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-gold-500"
+          >
+        </div>
+      </div>
+
+      <!-- Footer Modal con Cantidad y Botón Añadir -->
+      <div class="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-4 shrink-0">
+        <!-- Selector Cantidad -->
+        <div class="flex items-center gap-2 bg-slate-900 border border-slate-800 p-1 rounded-xl">
+          <button onclick="adjustModalQuantity(-1)" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center font-bold text-sm">
+            -
+          </button>
+          <span id="modal-item-quantity" class="w-6 text-center text-sm font-bold text-white">1</span>
+          <button onclick="adjustModalQuantity(1)" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center font-bold text-sm">
+            +
+          </button>
+        </div>
+
+        <!-- Botón Agregar con Total Dinámico -->
+        <button 
+          onclick="confirmAddToCart()" 
+          class="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-chifa-600 to-chifa-700 hover:from-chifa-500 hover:to-chifa-600 text-white font-bold text-sm shadow-lg shadow-chifa-950/50 flex items-center justify-between transition-all"
+        >
+          <span>Agregar al Carrito</span>
+          <span id="modal-add-button-total" class="font-black text-gold-300">$8.50</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- DRAWER DEL CARRITO DE COMPRAS                            -->
+  <!-- ======================================================== -->
+  <div id="cart-drawer-backdrop" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 opacity-0 pointer-events-none transition-opacity duration-300" onclick="toggleCart(false)"></div>
+  
+  <aside id="cart-drawer" class="fixed top-0 right-0 bottom-0 w-full sm:w-[450px] bg-slate-900 z-50 border-l border-slate-800 shadow-2xl transform translate-x-full transition-transform duration-300 flex flex-col">
+    
+    <!-- Header del Carrito -->
+    <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-chifa-700/40 text-gold-400 flex items-center justify-center border border-chifa-700/50">
+          <i data-lucide="shopping-bag" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h3 class="font-bold text-white text-base font-display">Tu Pedido Chifa</h3>
+          <p id="drawer-items-subtitle" class="text-[11px] text-slate-400">0 platos seleccionados</p>
+        </div>
+      </div>
+      <button onclick="toggleCart(false)" class="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- Lista de Items en Carrito -->
+    <div id="cart-items-container" class="flex-1 overflow-y-auto p-4 space-y-3">
+      <!-- Inyectado dinámicamente -->
+    </div>
+
+    <!-- Vista de Carrito Vacío -->
+    <div id="cart-empty-state" class="hidden flex-1 flex-col items-center justify-center p-6 text-center">
+      <div class="w-16 h-16 rounded-2xl bg-slate-800/60 text-slate-500 flex items-center justify-center mb-3">
+        <i data-lucide="shopping-bag" class="w-8 h-8"></i>
+      </div>
+      <h4 class="font-bold text-white text-base">Tu canasta está vacía</h4>
+      <p class="text-xs text-slate-400 mt-1 max-w-xs">Aún no has agregado ningún plato de nuestro menú de chifa.</p>
+    </div>
+
+    <!-- Resumen y Despacho -->
+    <div id="cart-summary-box" class="p-5 bg-slate-950 border-t border-slate-800 space-y-3">
+      <div class="space-y-1.5 text-xs text-slate-400">
+        <div class="flex justify-between">
+          <span>Subtotal Comida</span>
+          <span class="font-bold text-white" id="summary-subtotal">$0.00</span>
+        </div>
+        <div class="flex justify-between">
+          <span>Envío a Domicilio</span>
+          <span class="font-bold text-white" id="summary-delivery">$0.00</span>
+        </div>
+        <div class="flex justify-between text-base font-black text-white pt-2 border-t border-slate-800">
+          <span>Total a Pagar</span>
+          <span class="text-gold-400 text-xl font-display" id="summary-grand-total">$0.00</span>
+        </div>
+      </div>
+
+      <button 
+        id="btn-open-checkout"
+        onclick="openCheckoutModal()" 
+        class="w-full py-3.5 px-4 bg-gradient-to-r from-chifa-600 to-chifa-700 hover:from-chifa-500 hover:to-chifa-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-chifa-950 flex items-center justify-center gap-2 active:scale-95 transition-all"
+      >
+        <span>Proceder al Despacho</span>
+        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+  </aside>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: FORMULARIO DE CHECKOUT Y DESPACHO                 -->
+  <!-- ======================================================== -->
+  <div id="modal-checkout" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl my-6">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-chifa-600 text-white flex items-center justify-center font-bold text-xs">
+            <i data-lucide="map-pin" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Datos de Entrega y Pago</h3>
+            <p class="text-[11px] text-slate-400">Completa para enviar tu pedido a WhatsApp</p>
+          </div>
+        </div>
+        <button onclick="closeCheckoutModal()" class="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Formulario -->
+      <form id="checkout-form" onsubmit="submitOrderToWhatsApp(event)" class="p-6 space-y-5">
+        
+        <!-- Datos de Contacto -->
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1" for="cust-name">
+              Nombre Completo <span class="text-chifa-500">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="cust-name" 
+              required
+              placeholder="Ej. Carlos Mendoza" 
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-gold-500"
+            >
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1" for="cust-phone">
+              Teléfono WhatsApp <span class="text-chifa-500">*</span>
+            </label>
+            <input 
+              type="tel" 
+              id="cust-phone" 
+              required
+              placeholder="Ej. 0987654321" 
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-gold-500"
+            >
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1" for="cust-address">
+              Dirección de Entrega Exacta <span class="text-chifa-500">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="cust-address" 
+              required
+              placeholder="Ej. Av. América N24-102 y Colón, Dpto 302" 
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-gold-500"
+            >
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1" for="cust-notes">
+              Referencias adicionales (opcional)
+            </label>
+            <input 
+              type="text" 
+              id="cust-notes" 
+              placeholder="Ej. Timbre verde, conjunto Las Acacias" 
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-gold-500"
+            >
+          </div>
+        </div>
+
+        <!-- Forma de Pago -->
+        <div class="pt-2 border-t border-slate-800">
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+            Forma de Pago
+          </label>
+          <div class="grid grid-cols-3 gap-2">
+            <label class="flex flex-col p-2.5 rounded-xl border border-slate-800 bg-slate-950 cursor-pointer hover:border-gold-500 text-center has-[:checked]:border-gold-500 has-[:checked]:bg-gold-500/10">
+              <input type="radio" name="payment-method" value="Efectivo" checked onchange="togglePaymentInputs(this.value)" class="sr-only">
+              <span class="text-xs font-bold text-white">💵 Efectivo</span>
+              <span class="text-[10px] text-slate-400">Contraentrega</span>
+            </label>
+
+            <label class="flex flex-col p-2.5 rounded-xl border border-slate-800 bg-slate-950 cursor-pointer hover:border-gold-500 text-center has-[:checked]:border-gold-500 has-[:checked]:bg-gold-500/10">
+              <input type="radio" name="payment-method" value="Transferencia" onchange="togglePaymentInputs(this.value)" class="sr-only">
+              <span class="text-xs font-bold text-white">🏦 Transf.</span>
+              <span class="text-[10px] text-slate-400">Bancaria</span>
+            </label>
+
+            <label class="flex flex-col p-2.5 rounded-xl border border-slate-800 bg-slate-950 cursor-pointer hover:border-gold-500 text-center has-[:checked]:border-gold-500 has-[:checked]:bg-gold-500/10">
+              <input type="radio" name="payment-method" value="Tarjeta" onchange="togglePaymentInputs(this.value)" class="sr-only">
+              <span class="text-xs font-bold text-white">💳 Tarjeta</span>
+              <span class="text-[10px] text-slate-400">POS Móvil</span>
+            </label>
+          </div>
+
+          <!-- Detalles condicionales de pago -->
+          <div class="mt-3">
+            <!-- Efectivo: Cambio -->
+            <div id="pay-detail-cash" class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <label class="block text-[11px] font-semibold text-slate-300 mb-1" for="cust-cash-change">
+                ¿Con cuánto vas a pagar? (Para que el motorizado lleve cambio):
+              </label>
+              <input 
+                type="number" 
+                step="0.01" 
+                id="cust-cash-change" 
+                placeholder="Ej. $20.00 (Dejar vacío si es monto exacto)" 
+                class="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-gold-500"
+              >
+            </div>
+
+            <!-- Transferencia: Cuentas -->
+            <div id="pay-detail-transfer" class="hidden p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-gold-400">Datos Bancarios para Transferir:</span>
+                <button type="button" onclick="copyBankInfo()" class="text-[10px] text-slate-300 bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded">
+                  Copiar Datos
+                </button>
+              </div>
+              <p id="checkout-bank-details-text" class="font-mono text-[11px] text-slate-300 whitespace-pre-line bg-slate-900 p-2.5 rounded border border-slate-800">
+                Banco: Pichincha
+                Cta Corriente: 2100458923
+                Titular: Chifa Dragón Dorado S.A.
+                RUC: 1792458901001
+              </p>
+              <p class="text-[10px] text-slate-400 italic">Podrás adjuntar la foto del comprobante al abrir el chat de WhatsApp.</p>
+            </div>
+
+            <!-- Tarjeta: Aviso POS -->
+            <div id="pay-detail-card" class="hidden p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-300 flex items-center gap-2">
+              <i data-lucide="credit-card" class="w-5 h-5 text-gold-400 shrink-0"></i>
+              <span>El repartidor llevará un punto de venta (datáfono) inalámbrico para procesar tu tarjeta Visa o Mastercard.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Total del Checkout -->
+        <div class="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between">
+          <span class="text-xs text-slate-400">Total a liquidar (inc. envío):</span>
+          <span id="checkout-modal-total" class="text-xl font-black text-gold-400 font-display">$0.00</span>
+        </div>
+
+        <!-- Botón Enviar WhatsApp -->
+        <button 
+          type="submit" 
+          class="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-sm shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 transition-all cursor-pointer"
+        >
+          <i data-lucide="message-circle" class="w-5 h-5"></i>
+          <span>Confirmar y Enviar Pedido a WhatsApp</span>
+        </button>
+
+      </form>
+
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- VISTA 2: SISTEMA BACKEND Y GESTIÓN CON AUTENTICACIÓN    -->
+  <!-- ======================================================== -->
+  <div id="view-backend" class="hidden flex-1 w-full flex-col">
+    
+    <!-- SUB-VISTA 2A: LOGIN DEL SISTEMA -->
+    <div id="backend-login-container" class="flex-1 flex items-center justify-center p-4">
+      <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-6">
+        
+        <div class="text-center space-y-1">
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-chifa-700 to-amber-700 flex items-center justify-center mx-auto text-2xl shadow-lg shadow-chifa-950 text-gold-400">
+            🥢
+          </div>
+          <h2 class="text-2xl font-bold font-display text-white mt-3">Panel de Administración</h2>
+          <p class="text-xs text-slate-400">Inicia sesión con tu cuenta de operador o master</p>
+        </div>
+
+        <form onsubmit="handleLoginSubmit(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1" for="login-username">Usuario</label>
+            <input 
+              type="text" 
+              id="login-username" 
+              required
+              placeholder="master, menu_editor, operador..." 
+              class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-gold-500"
+            >
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1" for="login-password">Contraseña</label>
+            <input 
+              type="password" 
+              id="login-password" 
+              required
+              placeholder="••••••••" 
+              class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-gold-500"
+            >
+          </div>
+
+          <button 
+            type="submit" 
+            class="w-full py-3.5 bg-gradient-to-r from-chifa-600 to-chifa-700 hover:from-chifa-500 hover:to-chifa-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-chifa-950 transition-all cursor-pointer"
+          >
+            Ingresar al Panel
+          </button>
+        </form>
+
+        <!-- Cuentas Demo para Pruebas Inmediatas -->
+        <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800/80 text-xs space-y-2">
+          <p class="font-bold text-gold-400 text-[11px] uppercase tracking-wider">Cuentas Demo Preconfiguradas:</p>
+          <div class="grid grid-cols-1 gap-1 text-[11px] text-slate-400">
+            <div class="flex justify-between items-center py-1 border-b border-slate-800/50">
+              <span>👑 Master: <strong class="text-white">master</strong></span>
+              <span class="font-mono text-slate-500">clave: master123</span>
+            </div>
+            <div class="flex justify-between items-center py-1 border-b border-slate-800/50">
+              <span>📋 Editor Menú: <strong class="text-white">menu_admin</strong></span>
+              <span class="font-mono text-slate-500">clave: menu123</span>
+            </div>
+            <div class="flex justify-between items-center py-1">
+              <span>🛵 Pedidos/Caja: <strong class="text-white">cajero</strong></span>
+              <span class="font-mono text-slate-500">clave: caja123</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- SUB-VISTA 2B: DASHBOARD PRINCIPAL CON TABS SEGÚN ROLES -->
+    <div id="backend-dashboard-container" class="hidden flex-1 flex flex-col">
+      
+      <!-- Barra Superior del Panel Admin -->
+      <div class="bg-slate-900 border-b border-slate-800 px-4 sm:px-8 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-chifa-700/50 flex items-center justify-center text-gold-400 font-bold text-xs">
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="current-user-name" class="font-bold text-white text-sm">Usuario Master</span>
+              <span id="current-user-role-badge" class="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-gold-500/20 text-gold-400 border border-gold-500/30">
+                MASTER
+              </span>
+            </div>
+            <span class="text-[11px] text-slate-400" id="current-user-permissions-hint">Acceso total al sistema</span>
+          </div>
+        </div>
+
+        <!-- Botones de Navegación de Pestañas -->
+        <div class="flex items-center gap-1.5 overflow-x-auto text-xs py-1">
+          <button id="tab-btn-orders" onclick="switchBackendTab('orders')" class="px-3.5 py-2 rounded-xl font-bold transition-all bg-slate-800 text-white flex items-center gap-1.5">
+            <i data-lucide="clipboard-list" class="w-3.5 h-3.5"></i> Pedidos
+          </button>
+          <button id="tab-btn-products" onclick="switchBackendTab('products')" class="px-3.5 py-2 rounded-xl font-bold transition-all text-slate-400 hover:text-white flex items-center gap-1.5">
+            <i data-lucide="utensils" class="w-3.5 h-3.5"></i> Menú / Platos
+          </button>
+          <button id="tab-btn-categories" onclick="switchBackendTab('categories')" class="px-3.5 py-2 rounded-xl font-bold transition-all text-slate-400 hover:text-white flex items-center gap-1.5">
+            <i data-lucide="folder-tree" class="w-3.5 h-3.5"></i> Categorías
+          </button>
+          <button id="tab-btn-extras" onclick="switchBackendTab('extras')" class="px-3.5 py-2 rounded-xl font-bold transition-all text-slate-400 hover:text-white flex items-center gap-1.5">
+            <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> Extras / Salsas
+          </button>
+          <button id="tab-btn-users" onclick="switchBackendTab('users')" class="px-3.5 py-2 rounded-xl font-bold transition-all text-slate-400 hover:text-white flex items-center gap-1.5">
+            <i data-lucide="users" class="w-3.5 h-3.5"></i> Usuarios
+          </button>
+          <button id="tab-btn-settings" onclick="switchBackendTab('settings')" class="px-3.5 py-2 rounded-xl font-bold transition-all text-slate-400 hover:text-white flex items-center gap-1.5">
+            <i data-lucide="settings" class="w-3.5 h-3.5"></i> Ajustes Chifa
+          </button>
+
+          <!-- Cerrar Sesión -->
+          <button onclick="handleLogout()" class="px-3 py-2 rounded-xl text-rose-400 hover:bg-rose-500/10 font-bold ml-2 transition-colors flex items-center gap-1" title="Cerrar Sesión">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- CONTENEDOR DE CONTENIDO DE PESTAÑAS ADMIN -->
+      <div class="flex-1 max-w-7xl mx-auto w-full p-4 sm:p-6 lg:p-8 overflow-y-auto">
+
+        <!-- 1. PESTAÑA: GESTIÓN DE PEDIDOS -->
+        <div id="backend-panel-orders" class="space-y-4">
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 class="text-xl font-bold text-white font-display">Pedidos del Chifa</h3>
+              <p class="text-xs text-slate-400">Controla el flujo de comandas desde cocina hasta el motorizado</p>
+            </div>
+            <button onclick="renderBackendOrders()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg text-slate-300 flex items-center gap-1.5">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i> Actualizar
+            </button>
+          </div>
+
+          <!-- Tabla / Tarjetas de Pedidos -->
+          <div id="admin-orders-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Inyectado dinámicamente -->
+          </div>
+        </div>
+
+        <!-- 2. PESTAÑA: PRODUCTOS / MENÚ -->
+        <div id="backend-panel-products" class="hidden space-y-6">
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 class="text-xl font-bold text-white font-display">Platos del Menú</h3>
+              <p class="text-xs text-slate-400">Crea o edita platos, precios, categorías y asocia extras</p>
+            </div>
+            <button id="btn-add-product" onclick="openProductFormModal()" class="px-4 py-2.5 bg-chifa-600 hover:bg-chifa-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-lg shadow-chifa-950">
+              <i data-lucide="plus" class="w-4 h-4"></i> Nuevo Plato
+            </button>
+          </div>
+
+          <!-- Listado de Platos en Tabla -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                  <tr>
+                    <th class="p-3.5">Plato</th>
+                    <th class="p-3.5">Categoría / Subcat</th>
+                    <th class="p-3.5">Precio</th>
+                    <th class="p-3.5">Extras Habilitados</th>
+                    <th class="p-3.5 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-products-table-body" class="divide-y divide-slate-800 text-slate-300">
+                  <!-- Inyectado dinámicamente -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. PESTAÑA: CATEGORÍAS Y SUBCATEGORÍAS -->
+        <div id="backend-panel-categories" class="hidden space-y-6">
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 class="text-xl font-bold text-white font-display">Categorías & Subcategorías</h3>
+              <p class="text-xs text-slate-400">Organiza las secciones del menú oriental</p>
+            </div>
+            <button id="btn-add-category" onclick="openCategoryModal()" class="px-4 py-2 bg-chifa-600 hover:bg-chifa-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5">
+              <i data-lucide="plus" class="w-4 h-4"></i> Nueva Categoría
+            </button>
+          </div>
+
+          <div id="admin-categories-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Inyectado dinámicamente -->
+          </div>
+        </div>
+
+        <!-- 4. PESTAÑA: EXTRAS Y ACOMPAÑAMIENTOS -->
+        <div id="backend-panel-extras" class="hidden space-y-6">
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 class="text-xl font-bold text-white font-display">Extras & Salsas Chifa</h3>
+              <p class="text-xs text-slate-400">Wantanes fritos extras, salsa tamarindo, ají, porciones de arroz...</p>
+            </div>
+            <button id="btn-add-extra" onclick="openExtraModal()" class="px-4 py-2 bg-chifa-600 hover:bg-chifa-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5">
+              <i data-lucide="plus" class="w-4 h-4"></i> Crear Extra
+            </button>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                <tr>
+                  <th class="p-3.5">Nombre del Extra</th>
+                  <th class="p-3.5">Precio Adicional</th>
+                  <th class="p-3.5 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="admin-extras-table-body" class="divide-y divide-slate-800 text-slate-300">
+                <!-- Inyectado dinámicamente -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 5. PESTAÑA: GESTIÓN DE USUARIOS (SOLO MASTER) -->
+        <div id="backend-panel-users" class="hidden space-y-6">
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 class="text-xl font-bold text-white font-display">Usuarios & Jerarquía de Roles</h3>
+              <p class="text-xs text-slate-400">Administra quién puede editar el menú o gestionar los despachos</p>
+            </div>
+            <button onclick="openUserModal()" class="px-4 py-2 bg-chifa-600 hover:bg-chifa-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5">
+              <i data-lucide="user-plus" class="w-4 h-4"></i> Crear Usuario
+            </button>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                <tr>
+                  <th class="p-3.5">Usuario</th>
+                  <th class="p-3.5">Nombre Completo</th>
+                  <th class="p-3.5">Rol / Permisos</th>
+                  <th class="p-3.5 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="admin-users-table-body" class="divide-y divide-slate-800 text-slate-300">
+                <!-- Inyectado dinámicamente -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 6. PESTAÑA: AJUSTES GENERALES DEL RESTAURANTE (SOLO MASTER) -->
+        <div id="backend-panel-settings" class="hidden space-y-6 max-w-3xl">
+          <div>
+            <h3 class="text-xl font-bold text-white font-display">Ajustes Generales del Chifa</h3>
+            <p class="text-xs text-slate-400">Personaliza la marca, logotipo y teléfonos para recibir pedidos</p>
+          </div>
+
+          <form onsubmit="handleSaveSettings(event)" class="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-5">
+            
+            <!-- Carga de Logotipo -->
+            <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+              <label class="block text-xs font-bold uppercase tracking-wider text-gold-400">
+                Logotipo del Chifa
+              </label>
+              <div class="flex items-center gap-4">
+                <div class="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0">
+                  <img id="settings-logo-preview" src="" alt="Vista previa logo" class="w-full h-full object-cover hidden">
+                  <span id="settings-logo-placeholder" class="text-2xl text-slate-600">🥢</span>
+                </div>
+                <div class="flex-1 space-y-1.5">
+                  <input 
+                    type="file" 
+                    id="settings-logo-file" 
+                    accept="image/*"
+                    onchange="handleLogoUpload(event)"
+                    class="block w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                  >
+                  <p class="text-[11px] text-slate-500">Formato PNG, JPG o WebP. Se guarda en almacenamiento local.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Datos Generales -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1" for="set-name">Nombre Comercial</label>
+                <input type="text" id="set-name" required class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1" for="set-slogan">Eslogan / Subtítulo</label>
+                <input type="text" id="set-slogan" required class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1" for="set-phone">Teléfono WhatsApp de Pedidos</label>
+                <input type="text" id="set-phone" required placeholder="593991234567" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+                <span class="text-[10px] text-slate-500">Incluye código de país sin el signo '+'</span>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1" for="set-delivery">Costo Envío Domicilio ($)</label>
+                <input type="number" step="0.25" id="set-delivery" required class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1" for="set-address">Dirección del Local Físico</label>
+              <input type="text" id="set-address" required class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1" for="set-bank">Datos de Cuenta Bancaria (Transferencias)</label>
+              <textarea id="set-bank" rows="3" class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"></textarea>
+            </div>
+
+            <button type="submit" class="px-6 py-3 bg-chifa-600 hover:bg-chifa-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-chifa-950">
+              Guardar Configuración
+            </button>
+
+          </form>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODALES ADMINISTRATIVOS (CRUD PLATO, CATEGORÍA, EXTRA, USER)-->
+  <!-- ======================================================== -->
+  
+  <!-- MODAL: CREAR / EDITAR PLATO -->
+  <div id="modal-admin-product" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl my-6">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <h3 id="admin-product-modal-title" class="font-bold text-white text-base font-display">Nuevo Plato</h3>
+        <button onclick="closeProductFormModal()" class="w-7 h-7 rounded-lg bg-slate-800 text-slate-400 flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <form id="admin-product-form" onsubmit="handleSaveProduct(event)" class="mt-4 space-y-4">
+        <input type="hidden" id="prod-form-id">
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre del Plato</label>
+          <input type="text" id="prod-form-name" required class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Categoría</label>
+            <select id="prod-form-category" onchange="updateSubcatOptions(this.value)" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+              <!-- Se puebla dinámicamente -->
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Subcategoría</label>
+            <select id="prod-form-subcategory" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+              <!-- Se puebla según categoría -->
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Precio ($)</label>
+            <input type="number" step="0.05" id="prod-form-price" required class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">URL de Imagen</label>
+            <input type="url" id="prod-form-image" placeholder="https://..." class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Descripción</label>
+          <textarea id="prod-form-desc" rows="2" class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"></textarea>
+        </div>
+
+        <!-- Extras permitidos para este plato -->
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-gold-400 mb-1.5">Extras Habilitados para este plato</label>
+          <div id="prod-form-extras-checklist" class="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-xs">
+            <!-- Checkboxes de extras -->
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeProductFormModal()" class="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white">Cancelar</button>
+          <button type="submit" class="px-5 py-2 bg-chifa-600 hover:bg-chifa-500 text-white text-xs font-bold rounded-xl">Guardar Plato</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: CREAR / EDITAR CATEGORÍA & SUBCATEGORÍAS -->
+  <div id="modal-admin-category" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl my-6">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <h3 id="admin-category-modal-title" class="font-bold text-white text-base font-display">Gestionar Categoría</h3>
+        <button onclick="closeCategoryModal()" class="w-7 h-7 rounded-lg bg-slate-800 text-slate-400 flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <form id="admin-category-form" onsubmit="handleSaveCategory(event)" class="mt-4 space-y-4">
+        <input type="hidden" id="cat-form-id">
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre de la Categoría</label>
+          <input type="text" id="cat-form-name" required placeholder="Ej: Arroces Chaufa" class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Subcategorías (separadas por coma)</label>
+          <input type="text" id="cat-form-subs" placeholder="Especiales, Simples, Aeropuertos" class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+          <span class="text-[10px] text-slate-500">Ejemplo: Pollo, Carne, Mariscos, Mixto</span>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeCategoryModal()" class="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white">Cancelar</button>
+          <button type="submit" class="px-5 py-2 bg-chifa-600 hover:bg-chifa-500 text-white text-xs font-bold rounded-xl">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: CREAR / EDITAR EXTRA -->
+  <div id="modal-admin-extra" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl my-6">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <h3 id="admin-extra-modal-title" class="font-bold text-white text-base font-display">Extra o Salsa</h3>
+        <button onclick="closeExtraModal()" class="w-7 h-7 rounded-lg bg-slate-800 text-slate-400 flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <form id="admin-extra-form" onsubmit="handleSaveExtra(event)" class="mt-4 space-y-4">
+        <input type="hidden" id="extra-form-id">
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre del Extra</label>
+          <input type="text" id="extra-form-name" required placeholder="Ej: Salsa Tamarindo Extra" class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Precio Adicional ($)</label>
+          <input type="number" step="0.10" id="extra-form-price" required placeholder="0.75" class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeExtraModal()" class="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white">Cancelar</button>
+          <button type="submit" class="px-5 py-2 bg-chifa-600 hover:bg-chifa-500 text-white text-xs font-bold rounded-xl">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: CREAR / EDITAR USUARIO -->
+  <div id="modal-admin-user" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl my-6">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <h3 id="admin-user-modal-title" class="font-bold text-white text-base font-display">Gestionar Usuario</h3>
+        <button onclick="closeUserModal()" class="w-7 h-7 rounded-lg bg-slate-800 text-slate-400 flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <form id="admin-user-form" onsubmit="handleSaveUser(event)" class="mt-4 space-y-4">
+        <input type="hidden" id="user-form-id">
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre de Usuario (Login)</label>
+          <input type="text" id="user-form-username" required class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre Completo</label>
+          <input type="text" id="user-form-fullname" required class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Contraseña</label>
+          <input type="password" id="user-form-password" required class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Rol y Nivel de Permisos</label>
+          <select id="user-form-role" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
+            <option value="master">👑 Master (Acceso y control total)</option>
+            <option value="menu_admin">📋 Editor de Menú (Platos, Categorías y Extras)</option>
+            <option value="orders_op">🛵 Operador de Pedidos / Caja</option>
+          </select>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeUserModal()" class="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white">Cancelar</button>
+          <button type="submit" class="px-5 py-2 bg-chifa-600 hover:bg-chifa-500 text-white text-xs font-bold rounded-xl">Guardar Usuario</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- JAVASCRIPT: ARQUITECTURA DE DATOS & LÓGICA DE NEGOCIO    -->
+  <!-- ======================================================== -->
+  <script>
+    /**
+     * ESTRUCTURAS DE DATOS INICIALES POR DEFECTO PARA CHIFA
+     */
+    const DEFAULT_CHIFA_CONFIG = {
+      name: "CHIFA DRAGÓN DORADO",
+      slogan: "Auténtico Sabor Oriental al Wok",
+      phone: "593998765432", // Número receptor de WhatsApp
+      deliveryFee: 2.00,
+      address: "Av. República y Amazonas, Edificio Wok Real, Quito",
+      bankDetails: "Banco Pichincha - Cta Corriente # 2100889922\nTitular: Chifa Dragón Dorado Cía. Ltda.\nRUC: 1792984501001\nCorreo: pagos@chifadragondorado.com",
+      logoUrl: "" // Base64 o URL personalizada
+    };
+
+    const DEFAULT_CATEGORIES = [
+      { id: "cat-1", name: "Chaulafanes & Arroces", subcategories: ["Clásicos", "Especiales", "Aeropuertos"] },
+      { id: "cat-2", name: "Tallarines Salteados", subcategories: ["Sam Si", "Taypa", "Pollo"] },
+      { id: "cat-3", name: "Especialidades Chifa", subcategories: ["Tipakay", "Chi Jau Kay", "Kam Lu Wantan"] },
+      { id: "cat-4", name: "Sopas & Wantanes", subcategories: ["Sopas Wonton", "Entradas Fritas", "Dim Sum"] },
+      { id: "cat-5", name: "Bebidas Orientales", subcategories: ["Té Chino", "Gaseosas", "Cervezas"] }
+    ];
+
+    const DEFAULT_EXTRAS = [
+      { id: "ext-1", name: "Porción de Wantán Frito (4 uds)", price: 1.50 },
+      { id: "ext-2", name: "Salsa Tamarindo Extra (3 oz)", price: 0.75 },
+      { id: "ext-3", name: "Salsa de Ají Chifero Especial", price: 0.50 },
+      { id: "ext-4", name: "Huevo Frito adicional encima", price: 0.80 },
+      { id: "ext-5", name: "Sopa Wonton Personal de acompañamiento", price: 2.25 },
+      { id: "ext-6", name: "Porción de Arroz Blanco Jazmín", price: 1.00 }
+    ];
+
+    const DEFAULT_PRODUCTS = [
+      {
+        id: "p-1",
+        name: "Chaulafán Especial Dragón",
+        categoryId: "cat-1",
+        categoryName: "Chaulafanes & Arroces",
+        subcategory: "Especiales",
+        price: 8.50,
+        description: "El rey del wok: arroz salteado con lomo fino, pollo marinado, camarones gigantes, cebollino y toque ahumado.",
+        image: "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=600&auto=format&fit=crop&q=80",
+        allowedExtras: ["ext-1", "ext-2", "ext-3", "ext-4", "ext-5"]
+      },
+      {
+        id: "p-2",
+        name: "Aeropuerto Mixto Chifero",
+        categoryId: "cat-1",
+        categoryName: "Chaulafanes & Arroces",
+        subcategory: "Aeropuertos",
+        price: 9.00,
+        description: "Fusión extrema de arroz chaufa y tallarín saltado al wok con frejolito chino, huevo y doble carne.",
+        image: "https://images.unsplash.com/photo-1603133872878-684f208fb84b?w=600&auto=format&fit=crop&q=80",
+        allowedExtras: ["ext-1", "ext-2", "ext-3", "ext-4"]
+      },
+      {
+        id: "p-3",
+        name: "Pollo Tipakay Agridulce",
+        categoryId: "cat-3",
+        categoryName: "Especialidades Chifa",
+        subcategory: "Tipakay",
+        price: 9.50,
+        description: "Crujiente pechuga arrebozada en salsa de tamarindo artesanal con piña en almíbar y semillas de ajonjolí.",
+        image: "https://images.unsplash.com/photo-1525755662778-989d0524087e?w=600&auto=format&fit=crop&q=80",
+        allowedExtras: ["ext-1", "ext-2", "ext-6"]
+      },
+      {
+        id: "p-4",
+        name: "Pollo Chi Jau Kay Clásico",
+        categoryId: "cat-3",
+        categoryName: "Especialidades Chifa",
+        subcategory: "Chi Jau Kay",
+        price: 9.50,
+        description: "Filete crocante bañado en salsa de ostión tradicional con champiñones salteados y cebollita china.",
+        image: "https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?w=600&auto=format&fit=crop&q=80",
+        allowedExtras: ["ext-1", "ext-3", "ext-6"]
+      },
+      {
+        id: "p-5",
+        name: "Tallarín Taypa Supremo",
+        categoryId: "cat-2",
+        categoryName: "Tallarines Salteados",
+        subcategory: "Taypa",
+        price: 10.00,
+        description: "Fideos al dente salteados con camarón, cerdo asado char siu, pollo, pac choi y verduras crocantes.",
+        image: "https://images.unsplash.com/photo-1585032226651-759b368d7246?w=600&auto=format&fit=crop&q=80",
+        allowedExtras: ["ext-1", "ext-2", "ext-3"]
+      },
+      {
+        id: "p-6",
+        name: "Sopa Wonton Especial (Soperón)",
+        categoryId: "cat-4",
+        categoryName: "Sopas & Wantanes",
+        subcategory: "Sopas Wonton",
+        price: 7.00,
+        description: "Caldo reconfortante de ave con 6 wantanes rellenos de cerdo y langostino, fideos finos y col china.",
+        image: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=600&auto=format&fit=crop&q=80",
+        allowedExtras: ["ext-1", "ext-3"]
+      },
+      {
+        id: "p-7",
+        name: "Wantanes Fritos Rellenos (10 uds)",
+        categoryId: "cat-4",
+        categoryName: "Sopas & Wantanes",
+        subcategory: "Entradas Fritas",
+        price: 4.50,
+        description: "Wantanes ultra crujientes con relleno de carne sazonada, acompañados de salsa tamarindo clásica.",
+        image: "https://images.unsplash.com/photo-1541592106381-b31e9677c0e5?w=600&auto=format&fit=crop&q=80",
+        allowedExtras: ["ext-2", "ext-3"]
+      },
+      {
+        id: "p-8",
+        name: "Té Chino de Jazmín Helado (1 Litro)",
+        categoryId: "cat-5",
+        categoryName: "Bebidas Orientales",
+        subcategory: "Té Chino",
+        price: 3.00,
+        description: "Infusión aromática de té verde con flores de jazmín naturales servido con cubos de hielo y toque cítrico.",
+        image: "https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=600&auto=format&fit=crop&q=80",
+        allowedExtras: []
+      }
+    ];
+
+    const DEFAULT_USERS = [
+      { id: "u-master", username: "master", password: "master123", fullname: "Administrador General", role: "master" },
+      { id: "u-menu", username: "menu_admin", password: "menu123", fullname: "Chef Ejecutivo (Editor Menú)", role: "menu_admin" },
+      { id: "u-orders", username: "cajero", password: "caja123", fullname: "Operador de Caja y Delivery", role: "orders_op" }
+    ];
+
+    const DEFAULT_ORDERS = [
+      {
+        id: "ORD-9421",
+        customer: "Valeria Gómez",
+        phone: "0994112233",
+        address: "Av. Shyris y Portugal, Torre Nova Dpto 502",
+        itemsText: "1x Chaulafán Especial Dragón (Extras: Salsa Tamarindo, Huevo Frito)\n1x Té Jazmín",
+        payment: "Efectivo (Paga con $20.00)",
+        total: 13.05,
+        status: "En cocina",
+        timestamp: "Hace 15 min"
+      },
+      {
+        id: "ORD-9420",
+        customer: "Esteban Morales",
+        phone: "0987654321",
+        address: "Calle Whymper y Orellana, Casa 45",
+        itemsText: "1x Pollo Tipakay Agridulce (Extras: Wantán Frito x4)",
+        payment: "Transferencia (Comprobante pendiente)",
+        total: 13.00,
+        status: "En camino",
+        timestamp: "Hace 35 min"
+      }
+    ];
+
+    /**
+     * GESTIÓN DE PERSISTENCIA EN LOCALSTORAGE & CLOUD FIRESTORE
+     */
+    function loadFromStorage(key, defaultData) {
+      const stored = localStorage.getItem('chifa_' + key);
+      if (!stored) {
+        localStorage.setItem('chifa_' + key, JSON.stringify(defaultData));
+        return defaultData;
+      }
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        return defaultData;
+      }
+    }
+
+    function saveToStorage(key, data) {
+      localStorage.setItem('chifa_' + key, JSON.stringify(data));
+      // Si la base de datos de Google está conectada, sincronizar en la nube
+      syncToFirestore(key, data);
+    }
+
+    async function syncToFirestore(collectionKey, data) {
+      if (!window.dbService || !window.dbService.isReady()) return;
+
+      if (collectionKey === 'config') {
+        await window.dbService.saveDoc('settings', 'general', data);
+      } else if (Array.isArray(data)) {
+        // Guardar cada elemento en su colección de Firestore
+        for (const item of data) {
+          if (item.id) {
+            await window.dbService.saveDoc(collectionKey, String(item.id), item);
+          }
+        }
+      }
+    }
+
+    // Escuchar cuando la autenticación de Firebase esté lista para sincronizar en tiempo real
+    document.addEventListener('cloud-db-ready', async () => {
+      const statusIndicator = document.getElementById('cloud-status-indicator');
+      const statusText = document.getElementById('cloud-status-text');
+      if (statusIndicator) statusIndicator.className = "w-2 h-2 rounded-full bg-emerald-400";
+      if (statusText) statusText.textContent = "Conectado a Google Cloud Firestore en tiempo real";
+
+      listenToFirestoreChanges();
+    });
+
+    function listenToFirestoreChanges() {
+      const dbSvc = window.dbService;
+      if (!dbSvc || !dbSvc.isReady() || !dbSvc.db) return;
+
+      const appId = dbSvc.appId;
+
+      // 1. Escuchar pedidos en tiempo real
+      try {
+        const ordersCol = dbSvc.collection(dbSvc.db, 'artifacts', appId, 'public', 'data', 'orders');
+        dbSvc.onSnapshot(ordersCol, (snapshot) => {
+          if (!snapshot.empty) {
+            const remoteOrders = [];
+            snapshot.forEach(docSnap => remoteOrders.push(docSnap.data()));
+            // Ordenar por ID o tiempo en memoria
+            orders = remoteOrders;
+            localStorage.setItem('chifa_orders', JSON.stringify(orders));
+            if (currentUser) renderBackendOrders();
+          }
+        }, (err) => console.warn("Snapshot error en pedidos:", err));
+
+        // 2. Escuchar productos
+        const prodCol = dbSvc.collection(dbSvc.db, 'artifacts', appId, 'public', 'data', 'products');
+        dbSvc.onSnapshot(prodCol, (snapshot) => {
+          if (!snapshot.empty) {
+            const remoteProds = [];
+            snapshot.forEach(docSnap => remoteProds.push(docSnap.data()));
+            products = remoteProds;
+            localStorage.setItem('chifa_products', JSON.stringify(products));
+            renderStoreProducts();
+            if (currentUser) renderBackendProducts();
+          }
+        }, (err) => console.warn("Snapshot error en productos:", err));
+
+        // 3. Escuchar configuración
+        const configCol = dbSvc.collection(dbSvc.db, 'artifacts', appId, 'public', 'data', 'settings');
+        dbSvc.onSnapshot(configCol, (snapshot) => {
+          snapshot.forEach(docSnap => {
+            if (docSnap.id === 'general') {
+              chifaConfig = { ...chifaConfig, ...docSnap.data() };
+              localStorage.setItem('chifa_config', JSON.stringify(chifaConfig));
+              applyBranding();
+            }
+          });
+        }, (err) => console.warn("Snapshot error en config:", err));
+      } catch (err) {
+        console.warn("Error vinculando listeners de Firestore:", err);
+      }
+    }
+
+    // Estado Reactivo de la Aplicación
+    let chifaConfig = loadFromStorage('config', DEFAULT_CHIFA_CONFIG);
+    let categories = loadFromStorage('categories', DEFAULT_CATEGORIES);
+    let extras = loadFromStorage('extras', DEFAULT_EXTRAS);
+    let products = loadFromStorage('products', DEFAULT_PRODUCTS);
+    let users = loadFromStorage('users', DEFAULT_USERS);
+    let orders = loadFromStorage('orders', DEFAULT_ORDERS);
+
+    // Estado de Sesión y Navegación
+    let currentUser = null; // null o { id, username, fullname, role }
+    let currentCategoryFilter = "Todas";
+    let currentSubcategoryFilter = "Todas";
+    let storeSearchTerm = "";
+
+    // Estado del Carrito y Modal Producto
+    let cart = []; // Array de { tempId, productId, quantity, selectedExtras: [extraObj], note, itemPrice, subtotal }
+    let modalCurrentProduct = null;
+    let modalQuantity = 1;
+
+    /**
+     * INICIALIZACIÓN
+     */
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      applyBranding();
+      renderStoreCategories();
+      renderStoreProducts();
+      updateCartDisplay();
+    });
+
+    function applyBranding() {
+      // Navbar & Hero
+      document.getElementById('nav-brand-name').textContent = chifaConfig.name;
+      document.getElementById('nav-brand-slogan').textContent = chifaConfig.slogan;
+      document.getElementById('hero-shipping-display').textContent = `$${parseFloat(chifaConfig.deliveryFee).toFixed(2)}`;
+      
+      const logoImg = document.getElementById('nav-brand-logo');
+      const logoFallback = document.getElementById('nav-brand-fallback');
+      if (chifaConfig.logoUrl) {
+        logoImg.src = chifaConfig.logoUrl;
+        logoImg.classList.remove('hidden');
+        logoFallback.classList.add('hidden');
+      } else {
+        logoImg.classList.add('hidden');
+        logoFallback.classList.remove('hidden');
+      }
+
+      // Datos bancarios
+      const bankElem = document.getElementById('checkout-bank-details-text');
+      if (bankElem) bankElem.textContent = chifaConfig.bankDetails;
+    }
+
+    /**
+     * NAVEGACIÓN Y VISTAS (TIENDA VS BACKEND)
+     */
+    function switchView(view) {
+      const storeView = document.getElementById('view-store');
+      const backendView = document.getElementById('view-backend');
+      const navStoreActions = document.getElementById('nav-store-actions');
+      const btnAdminLabel = document.getElementById('btn-admin-label');
+
+      if (view === 'store') {
+        storeView.classList.remove('hidden');
+        backendView.classList.add('hidden');
+        navStoreActions.classList.remove('hidden');
+        btnAdminLabel.textContent = currentUser ? "Panel Admin" : "Acceso Admin";
+      } else {
+        storeView.classList.add('hidden');
+        backendView.classList.remove('hidden');
+        navStoreActions.classList.add('hidden');
+        btnAdminLabel.textContent = "Ver Tienda Online";
+        checkBackendAuthUI();
+      }
+      lucide.createIcons();
+    }
+
+    function handleAdminNavClick() {
+      const isStoreVisible = !document.getElementById('view-store').classList.contains('hidden');
+      if (isStoreVisible) {
+        switchView('backend');
+      } else {
+        switchView('store');
+      }
+    }
+
+    /**
+     * VISTA TIENDA: FILTROS Y CATÁLOGO
+     */
+    function renderStoreCategories() {
+      const tabsBar = document.getElementById('categories-tabs-bar');
+      if (!tabsBar) return;
+
+      const catList = [{ id: "todas", name: "Todas" }, ...categories];
+      tabsBar.innerHTML = catList.map(cat => {
+        const isActive = (cat.name === currentCategoryFilter);
+        const activeClass = isActive 
+          ? "bg-chifa-600 text-white font-extrabold shadow-md shadow-chifa-950 border-chifa-500" 
+          : "bg-slate-900 text-slate-400 hover:text-white border-slate-800";
+        return `
+          <button 
+            onclick="setStoreCategory('${cat.name}')" 
+            class="px-4 py-2 rounded-xl text-xs sm:text-sm whitespace-nowrap transition-all border font-medium ${activeClass}"
+          >
+            ${cat.name}
+          </button>
+        `;
+      }).join('');
+
+      renderSubcategoriesBar();
+    }
+
+    function renderSubcategoriesBar() {
+      const subBar = document.getElementById('subcategories-filter-bar');
+      if (!subBar) return;
+
+      if (currentCategoryFilter === "Todas") {
+        subBar.innerHTML = "";
+        currentSubcategoryFilter = "Todas";
+        return;
+      }
+
+      const foundCat = categories.find(c => c.name === currentCategoryFilter);
+      if (!foundCat || !foundCat.subcategories || foundCat.subcategories.length === 0) {
+        subBar.innerHTML = "";
+        currentSubcategoryFilter = "Todas";
+        return;
+      }
+
+      const subList = ["Todas", ...foundCat.subcategories];
+      subBar.innerHTML = `
+        <span class="text-slate-500 text-[11px] font-bold uppercase tracking-wider mr-1">Filtro:</span>
+        ${subList.map(sub => {
+          const isActive = (sub === currentSubcategoryFilter);
+          const activeClass = isActive ? "bg-gold-500/20 text-gold-400 border-gold-500/40" : "bg-slate-900/60 text-slate-400 border-slate-800";
+          return `
+            <button onclick="setStoreSubcategory('${sub}')" class="px-2.5 py-1 rounded-lg border text-[11px] font-semibold whitespace-nowrap transition-all ${activeClass}">
+              ${sub}
+            </button>
+          `;
+        }).join('')}
+      `;
+    }
+
+    function setStoreCategory(catName) {
+      currentCategoryFilter = catName;
+      currentSubcategoryFilter = "Todas";
+      renderStoreCategories();
+      renderStoreProducts();
+    }
+
+    function setStoreSubcategory(subName) {
+      currentSubcategoryFilter = subName;
+      renderSubcategoriesBar();
+      renderStoreProducts();
+    }
+
+    function handleStoreSearch(val) {
+      storeSearchTerm = val.trim().toLowerCase();
+      renderStoreProducts();
+    }
+
+    function resetStoreFilters() {
+      currentCategoryFilter = "Todas";
+      currentSubcategoryFilter = "Todas";
+      storeSearchTerm = "";
+      const searchInp = document.getElementById('store-search-input');
+      if (searchInp) searchInp.value = "";
+      renderStoreCategories();
+      renderStoreProducts();
+    }
+
+    function renderStoreProducts() {
+      const grid = document.getElementById('store-products-grid');
+      const emptyState = document.getElementById('store-empty-catalog');
+      if (!grid) return;
+
+      const filtered = products.filter(p => {
+        const matchCat = (currentCategoryFilter === "Todas" || p.categoryName === currentCategoryFilter);
+        const matchSub = (currentSubcategoryFilter === "Todas" || p.subcategory === currentSubcategoryFilter);
+        const matchQuery = p.name.toLowerCase().includes(storeSearchTerm) || 
+                           (p.description && p.description.toLowerCase().includes(storeSearchTerm));
+        return matchCat && matchSub && matchQuery;
+      });
+
+      if (filtered.length === 0) {
+        grid.innerHTML = "";
+        emptyState.classList.remove('hidden');
+        emptyState.classList.add('flex');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      emptyState.classList.remove('flex');
+
+      grid.innerHTML = filtered.map(prod => {
+        const hasExtras = prod.allowedExtras && prod.allowedExtras.length > 0;
+        return `
+          <div class="bg-slate-900 border border-slate-800/90 rounded-3xl overflow-hidden shadow-xl hover:border-gold-500/40 transition-all flex flex-col group">
+            
+            <!-- Imagen del Plato -->
+            <div class="relative h-48 w-full bg-slate-950 overflow-hidden cursor-pointer" onclick="openProductModal('${prod.id}')">
+              <img 
+                src="${prod.image || 'https://placehold.co/600x400/1e1e24/ca8a04?text=Chifa'}" 
+                alt="${prod.name}" 
+                class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                onerror="this.src='https://placehold.co/600x400/1e1e24/ca8a04?text=Chifa+Wok'"
+              >
+              <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent"></div>
+              
+              <div class="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
+                <span class="bg-slate-950/80 backdrop-blur text-gold-400 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-gold-500/20">
+                  ${prod.categoryName}
+                </span>
+                ${prod.subcategory ? `<span class="bg-black/60 backdrop-blur text-slate-300 text-[10px] font-medium px-2 py-0.5 rounded-lg">${prod.subcategory}</span>` : ''}
+              </div>
+
+              ${hasExtras ? `
+                <span class="absolute bottom-3 right-3 bg-chifa-950/80 text-gold-400 text-[10px] font-bold px-2 py-0.5 rounded-md border border-chifa-600/40">
+                  + Extras disponibles
+                </span>
+              ` : ''}
+            </div>
+
+            <!-- Datos del Plato -->
+            <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
+              <div>
+                <h3 class="font-bold text-white text-base group-hover:text-gold-400 transition-colors leading-snug cursor-pointer font-display" onclick="openProductModal('${prod.id}')">
+                  ${prod.name}
+                </h3>
+                <p class="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                  ${prod.description || 'Delicioso plato preparado fresco al fuego oriental con los mejores ingredientes.'}
+                </p>
+              </div>
+
+              <!-- Precio y Acción -->
+              <div class="pt-3 border-t border-slate-800 flex items-center justify-between">
+                <div>
+                  <span class="text-[10px] text-slate-500 uppercase font-bold block">Porción</span>
+                  <span class="text-lg font-black text-gold-400 font-display">$${parseFloat(prod.price).toFixed(2)}</span>
+                </div>
+
+                <button 
+                  onclick="openProductModal('${prod.id}')" 
+                  class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-chifa-600 to-chifa-700 hover:from-chifa-500 hover:to-chifa-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-chifa-950 active:scale-95 transition-all"
+                >
+                  <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                  <span>Pedir</span>
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    /**
+     * MODAL DE PRODUCTO Y SELECCIÓN DE EXTRAS
+     */
+    function openProductModal(productId) {
+      const prod = products.find(p => p.id === productId);
+      if (!prod) return;
+
+      modalCurrentProduct = prod;
+      modalQuantity = 1;
+
+      // Inyectar datos base
+      document.getElementById('modal-product-img').src = prod.image || 'https://placehold.co/600x400/1e1e24/ca8a04?text=Chifa';
+      document.getElementById('modal-product-category').textContent = prod.categoryName + (prod.subcategory ? ` • ${prod.subcategory}` : '');
+      document.getElementById('modal-product-title').textContent = prod.name;
+      document.getElementById('modal-product-desc').textContent = prod.description;
+      document.getElementById('modal-product-price').textContent = `$${parseFloat(prod.price).toFixed(2)}`;
+      document.getElementById('modal-item-quantity').textContent = "1";
+      document.getElementById('modal-item-notes').value = "";
+
+      // Listar extras permitidos
+      const extrasContainer = document.getElementById('modal-extras-list');
+      const allowed = prod.allowedExtras || [];
+      const productExtras = extras.filter(e => allowed.includes(e.id));
+
+      if (productExtras.length === 0) {
+        extrasContainer.innerHTML = `
+          <div class="p-3 bg-slate-950 rounded-xl text-center text-xs text-slate-500">
+            Este plato se sirve con su receta completa tradicional.
+          </div>
+        `;
+      } else {
+        extrasContainer.innerHTML = productExtras.map(ext => `
+          <label class="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer hover:border-gold-500/50 has-[:checked]:border-gold-500 has-[:checked]:bg-gold-500/5 transition-all">
+            <div class="flex items-center gap-3">
+              <input type="checkbox" value="${ext.id}" onchange="recalculateModalPrice()" class="rounded border-slate-700 text-gold-500 focus:ring-gold-500 w-4 h-4 bg-slate-900">
+              <span class="text-xs font-semibold text-slate-200">${ext.name}</span>
+            </div>
+            <span class="text-xs font-bold text-gold-400">+$${parseFloat(ext.price).toFixed(2)}</span>
+          </label>
+        `).join('');
+      }
+
+      recalculateModalPrice();
+      const modal = document.getElementById('modal-product-extras');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      lucide.createIcons();
+    }
+
+    function closeProductModal() {
+      const modal = document.getElementById('modal-product-extras');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      modalCurrentProduct = null;
+    }
+
+    function adjustModalQuantity(delta) {
+      modalQuantity = Math.max(1, modalQuantity + delta);
+      document.getElementById('modal-item-quantity').textContent = modalQuantity;
+      recalculateModalPrice();
+    }
+
+    function recalculateModalPrice() {
+      if (!modalCurrentProduct) return;
+      let unitPrice = parseFloat(modalCurrentProduct.price);
+
+      // Sumar extras checked
+      const checkedBoxes = document.querySelectorAll('#modal-extras-list input[type="checkbox"]:checked');
+      checkedBoxes.forEach(cb => {
+        const extraObj = extras.find(e => e.id === cb.value);
+        if (extraObj) unitPrice += parseFloat(extraObj.price);
+      });
+
+      const totalItem = unitPrice * modalQuantity;
+      document.getElementById('modal-add-button-total').textContent = `$${totalItem.toFixed(2)}`;
+    }
+
+    function confirmAddToCart() {
+      if (!modalCurrentProduct || !modalCurrentProduct.name) {
+        showToast("Error al agregar el producto. Inténtalo de nuevo.", true);
+        return;
+      }
+
+      // Preservar la referencia al producto antes de cualquier manipulación
+      const productToAdd = { ...modalCurrentProduct };
+
+      const checkedBoxes = document.querySelectorAll('#modal-extras-list input[type="checkbox"]:checked');
+      const selectedExtras = [];
+      let unitExtrasPrice = 0;
+
+      checkedBoxes.forEach(cb => {
+        const extraObj = extras.find(e => e.id === cb.value);
+        if (extraObj) {
+          selectedExtras.push(extraObj);
+          unitExtrasPrice += parseFloat(extraObj.price);
+        }
+      });
+
+      const noteInput = document.getElementById('modal-item-notes');
+      const note = noteInput ? noteInput.value.trim() : "";
+      const unitFinalPrice = parseFloat(productToAdd.price) + unitExtrasPrice;
+
+      cart.push({
+        tempId: 'cart-' + Date.now() + Math.random().toString(36).substr(2, 4),
+        productId: productToAdd.id,
+        name: productToAdd.name,
+        image: productToAdd.image,
+        unitBasePrice: parseFloat(productToAdd.price),
+        unitFinalPrice: unitFinalPrice,
+        quantity: modalQuantity,
+        selectedExtras: selectedExtras,
+        note: note,
+        subtotal: unitFinalPrice * modalQuantity
+      });
+
+      const addedName = productToAdd.name;
+      closeProductModal();
+      showToast(`¡${addedName} añadido al pedido!`);
+      updateCartDisplay();
+      toggleCart(true); // Abrir carrito para confirmar al usuario
+    }
+
+    /**
+     * CARRITO DE COMPRAS & CÁLCULOS
+     */
+    function toggleCart(open) {
+      const drawer = document.getElementById('cart-drawer');
+      const backdrop = document.getElementById('cart-drawer-backdrop');
+
+      if (open) {
+        backdrop.classList.remove('opacity-0', 'pointer-events-none');
+        backdrop.classList.add('opacity-100', 'pointer-events-auto');
+        drawer.classList.remove('translate-x-full');
+      } else {
+        backdrop.classList.add('opacity-0', 'pointer-events-none');
+        backdrop.classList.remove('opacity-100', 'pointer-events-auto');
+        drawer.classList.add('translate-x-full');
+      }
+    }
+
+    function updateCartItemQty(tempId, delta) {
+      const idx = cart.findIndex(i => i.tempId === tempId);
+      if (idx === -1) return;
+
+      cart[idx].quantity += delta;
+      if (cart[idx].quantity <= 0) {
+        cart.splice(idx, 1);
+      } else {
+        cart[idx].subtotal = cart[idx].unitFinalPrice * cart[idx].quantity;
+      }
+      updateCartDisplay();
+    }
+
+    function removeCartItem(tempId) {
+      cart = cart.filter(i => i.tempId !== tempId);
+      updateCartDisplay();
+    }
+
+    function updateCartDisplay() {
+      const totalCount = cart.reduce((sum, i) => sum + i.quantity, 0);
+      const subtotal = cart.reduce((sum, i) => sum + i.subtotal, 0);
+      const deliveryFee = totalCount > 0 ? parseFloat(chifaConfig.deliveryFee) : 0;
+      const grandTotal = totalCount > 0 ? (subtotal + deliveryFee) : 0;
+
+      // Badges e indicadores
+      document.getElementById('cart-counter-badge').textContent = totalCount;
+      document.getElementById('mobile-strip-badge').textContent = totalCount;
+      document.getElementById('mobile-strip-total').textContent = `$${grandTotal.toFixed(2)}`;
+      document.getElementById('drawer-items-subtitle').textContent = `${totalCount} plato${totalCount === 1 ? '' : 's'} en la comanda`;
+
+      // Resúmenes del footer
+      document.getElementById('summary-subtotal').textContent = `$${subtotal.toFixed(2)}`;
+      document.getElementById('summary-delivery').textContent = `$${deliveryFee.toFixed(2)}`;
+      document.getElementById('summary-grand-total').textContent = `$${grandTotal.toFixed(2)}`;
+      document.getElementById('checkout-modal-total').textContent = `$${grandTotal.toFixed(2)}`;
+
+      const btnCheckout = document.getElementById('btn-open-checkout');
+      if (totalCount === 0) {
+        btnCheckout.disabled = true;
+        btnCheckout.classList.add('opacity-50', 'pointer-events-none');
+      } else {
+        btnCheckout.disabled = false;
+        btnCheckout.classList.remove('opacity-50', 'pointer-events-none');
+      }
+
+      renderCartDrawerItems();
+    }
+
+    function renderCartDrawerItems() {
+      const container = document.getElementById('cart-items-container');
+      const emptyView = document.getElementById('cart-empty-state');
+      if (!container) return;
+
+      if (cart.length === 0) {
+        container.innerHTML = "";
+        emptyView.classList.remove('hidden');
+        emptyView.classList.add('flex');
+        return;
+      }
+
+      emptyView.classList.add('hidden');
+      emptyView.classList.remove('flex');
+
+      container.innerHTML = cart.map(item => {
+        const extrasBadges = item.selectedExtras.map(e => `
+          <span class="inline-block bg-slate-800 text-gold-400 text-[10px] px-2 py-0.5 rounded mr-1 mb-1">
+            + ${e.name} ($${parseFloat(e.price).toFixed(2)})
+          </span>
+        `).join('');
+
+        return `
+          <div class="p-3 bg-slate-950 rounded-2xl border border-slate-800/80 space-y-2.5">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-3">
+                <img src="${item.image || 'https://placehold.co/100x100'}" class="w-12 h-12 rounded-xl object-cover border border-slate-800 shrink-0">
+                <div>
+                  <h5 class="text-xs font-bold text-white leading-tight font-display">${item.name}</h5>
+                  <p class="text-[11px] text-slate-400">$${item.unitFinalPrice.toFixed(2)} c/u</p>
+                </div>
+              </div>
+              <button onclick="removeCartItem('${item.tempId}')" class="text-slate-500 hover:text-rose-400 p-1">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            </div>
+
+            ${extrasBadges ? `<div class="pt-1">${extrasBadges}</div>` : ''}
+
+            ${item.note ? `<p class="text-[10px] text-slate-400 italic bg-slate-900 p-1.5 rounded">Nota: ${item.note}</p>` : ''}
+
+            <div class="flex items-center justify-between pt-1 border-t border-slate-900">
+              <div class="flex items-center gap-2 bg-slate-900 border border-slate-800 p-1 rounded-xl">
+                <button onclick="updateCartItemQty('${item.tempId}', -1)" class="w-6 h-6 rounded bg-slate-800 text-white font-bold text-xs flex items-center justify-center">-</button>
+                <span class="w-5 text-center text-xs font-bold text-white">${item.quantity}</span>
+                <button onclick="updateCartItemQty('${item.tempId}', 1)" class="w-6 h-6 rounded bg-slate-800 text-white font-bold text-xs flex items-center justify-center">+</button>
+              </div>
+              <span class="text-sm font-black text-gold-400 font-display">$${item.subtotal.toFixed(2)}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    /**
+     * CHECKOUT Y GENERACIÓN DE MENSAJE A WHATSAPP
+     */
+    function openCheckoutModal() {
+      if (cart.length === 0) return;
+      toggleCart(false);
+      const modal = document.getElementById('modal-checkout');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeCheckoutModal() {
+      const modal = document.getElementById('modal-checkout');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function togglePaymentInputs(method) {
+      document.getElementById('pay-detail-cash').classList.add('hidden');
+      document.getElementById('pay-detail-transfer').classList.add('hidden');
+      document.getElementById('pay-detail-card').classList.add('hidden');
+
+      if (method === 'Efectivo') document.getElementById('pay-detail-cash').classList.remove('hidden');
+      if (method === 'Transferencia') document.getElementById('pay-detail-transfer').classList.remove('hidden');
+      if (method === 'Tarjeta') document.getElementById('pay-detail-card').classList.remove('hidden');
+    }
+
+    function copyBankInfo() {
+      const text = chifaConfig.bankDetails;
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      showToast("¡Datos bancarios copiados al portapapeles!");
+    }
+
+    function submitOrderToWhatsApp(event) {
+      event.preventDefault();
+      if (cart.length === 0) return;
+
+      const name = document.getElementById('cust-name').value.trim();
+      const phone = document.getElementById('cust-phone').value.trim();
+      const address = document.getElementById('cust-address').value.trim();
+      const notes = document.getElementById('cust-notes').value.trim() || "Ninguna";
+
+      const payMethod = document.querySelector('input[name="payment-method"]:checked').value;
+      let payDetail = payMethod;
+      if (payMethod === 'Efectivo') {
+        const cashAmt = document.getElementById('cust-cash-change').value.trim();
+        payDetail += cashAmt ? ` (Llevar cambio para: $${parseFloat(cashAmt).toFixed(2)})` : ` (Pago exacto)`;
+      } else if (payMethod === 'Transferencia') {
+        payDetail += ` (Adjunto comprobante a continuación)`;
+      } else if (payMethod === 'Tarjeta') {
+        payDetail += ` (Llevar datafono POS a domicilio)`;
+      }
+
+      // Detalle de ítems
+      let subtotal = 0;
+      let itemsLines = "";
+
+      cart.forEach(item => {
+        subtotal += item.subtotal;
+        let line = ` - ${item.quantity}x ${item.name} ($${item.unitFinalPrice.toFixed(2)}) -> $${item.subtotal.toFixed(2)}\n`;
+        if (item.selectedExtras && item.selectedExtras.length > 0) {
+          const extNames = item.selectedExtras.map(e => `${e.name} (+$${parseFloat(e.price).toFixed(2)})`).join(', ');
+          line += `   ↳ Extras: [${extNames}]\n`;
+        }
+        if (item.note) {
+          line += `   ↳ Nota cocina: "${item.note}"\n`;
+        }
+        itemsLines += line;
+      });
+
+      const grandTotal = subtotal + parseFloat(chifaConfig.deliveryFee);
+
+      // Crear pedido en historial local del backend para que aparezca en el panel de pedidos
+      const newOrderObj = {
+        id: "ORD-" + Math.floor(1000 + Math.random() * 9000),
+        customer: name,
+        phone: phone,
+        address: address,
+        itemsText: itemsLines,
+        payment: payDetail,
+        total: grandTotal,
+        status: "Pendiente",
+        timestamp: "Ahora mismo"
+      };
+      orders.unshift(newOrderObj);
+      saveToStorage('orders', orders);
+
+      // Armar mensaje WhatsApp
+      let msg = `🥢 *NUEVO PEDIDO EN LÍNEA - ${chifaConfig.name}* 🥢\n\n`;
+      msg += `👤 *Cliente:* ${name}\n`;
+      msg += `📞 *Teléfono:* ${phone}\n`;
+      msg += `📍 *Dirección:* ${address}\n`;
+      msg += `📄 *Notas:* ${notes}\n`;
+      msg += `----------------------------------\n`;
+      msg += `🛒 *Detalle de la Comanda:*\n`;
+      msg += itemsLines;
+      msg += ` - Costo de Envío Fijo: $${parseFloat(chifaConfig.deliveryFee).toFixed(2)}\n`;
+      msg += `----------------------------------\n`;
+      msg += `💵 *Forma de Pago:* ${payDetail}\n`;
+      msg += `💰 *TOTAL A PAGAR:* $${grandTotal.toFixed(2)}\n\n`;
+      msg += `¡Saludos! Quedo a la espera de la confirmación de mi pedido chifero.`;
+
+      const encoded = encodeURIComponent(msg);
+      const url = `https://wa.me/${chifaConfig.phone}?text=${encoded}`;
+
+      // Limpiar y resetear carrito
+      cart = [];
+      updateCartDisplay();
+      closeCheckoutModal();
+      showToast("¡Pedido registrado! Redirigiendo a WhatsApp...");
+
+      setTimeout(() => {
+        window.open(url, '_blank');
+      }, 700);
+    }
+
+    /**
+     * ========================================================
+     * BACKEND: AUTENTICACIÓN & JERARQUÍA DE ROLES
+     * ========================================================
+     */
+    function checkBackendAuthUI() {
+      const loginBox = document.getElementById('backend-login-container');
+      const dashBox = document.getElementById('backend-dashboard-container');
+
+      if (!currentUser) {
+        loginBox.classList.remove('hidden');
+        loginBox.classList.add('flex');
+        dashBox.classList.add('hidden');
+      } else {
+        loginBox.classList.add('hidden');
+        loginBox.classList.remove('flex');
+        dashBox.classList.remove('hidden');
+
+        // Configurar info de usuario
+        document.getElementById('current-user-name').textContent = currentUser.fullname;
+        const roleBadge = document.getElementById('current-user-role-badge');
+        roleBadge.textContent = currentUser.role.toUpperCase();
+
+        applyRolePermissionsUI();
+        switchBackendTab('orders'); // Pestaña inicial
+      }
+    }
+
+    function applyRolePermissionsUI() {
+      const role = currentUser.role;
+      const hint = document.getElementById('current-user-permissions-hint');
+      
+      const tabUsers = document.getElementById('tab-btn-users');
+      const tabSettings = document.getElementById('tab-btn-settings');
+      const tabProducts = document.getElementById('tab-btn-products');
+      const tabCategories = document.getElementById('tab-btn-categories');
+      const tabExtras = document.getElementById('tab-btn-extras');
+
+      // Botones de creación dentro de tabs
+      const btnAddProduct = document.getElementById('btn-add-product');
+      const btnAddCat = document.getElementById('btn-add-category');
+      const btnAddExtra = document.getElementById('btn-add-extra');
+
+      if (role === 'master') {
+        hint.textContent = "Nivel Master: Control Total del Sistema";
+        tabUsers.classList.remove('hidden');
+        tabSettings.classList.remove('hidden');
+        tabProducts.classList.remove('hidden');
+        tabCategories.classList.remove('hidden');
+        tabExtras.classList.remove('hidden');
+        if (btnAddProduct) btnAddProduct.classList.remove('hidden');
+        if (btnAddCat) btnAddCat.classList.remove('hidden');
+        if (btnAddExtra) btnAddExtra.classList.remove('hidden');
+      } else if (role === 'menu_admin') {
+        hint.textContent = "Editor de Menú: Gestión de Platos, Categorías y Extras";
+        tabUsers.classList.add('hidden');
+        tabSettings.classList.add('hidden');
+        tabProducts.classList.remove('hidden');
+        tabCategories.classList.remove('hidden');
+        tabExtras.classList.remove('hidden');
+        if (btnAddProduct) btnAddProduct.classList.remove('hidden');
+        if (btnAddCat) btnAddCat.classList.remove('hidden');
+        if (btnAddExtra) btnAddExtra.classList.remove('hidden');
+      } else if (role === 'orders_op') {
+        hint.textContent = "Operador de Caja: Solo Gestión de Pedidos";
+        tabUsers.classList.add('hidden');
+        tabSettings.classList.add('hidden');
+        tabProducts.classList.add('hidden');
+        tabCategories.classList.add('hidden');
+        tabExtras.classList.add('hidden');
+      }
+    }
+
+    function handleLoginSubmit(event) {
+      event.preventDefault();
+      const userVal = document.getElementById('login-username').value.trim();
+      const passVal = document.getElementById('login-password').value.trim();
+
+      const found = users.find(u => u.username === userVal && u.password === passVal);
+      if (found) {
+        currentUser = found;
+        showToast(`¡Bienvenido/a, ${found.fullname}!`);
+        checkBackendAuthUI();
+      } else {
+        showToast("Credenciales inválidas. Revisa usuario y clave.", true);
+      }
+    }
+
+    function handleLogout() {
+      currentUser = null;
+      showToast("Sesión cerrada");
+      checkBackendAuthUI();
+      switchView('store');
+    }
+
+    function switchBackendTab(tabName) {
+      const tabs = ['orders', 'products', 'categories', 'extras', 'users', 'settings'];
+      tabs.forEach(t => {
+        const panel = document.getElementById(`backend-panel-${t}`);
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (panel) panel.classList.add('hidden');
+        if (btn) {
+          btn.classList.remove('bg-slate-800', 'text-white');
+          btn.classList.add('text-slate-400');
+        }
+      });
+
+      const activePanel = document.getElementById(`backend-panel-${tabName}`);
+      const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+      if (activePanel) activePanel.classList.remove('hidden');
+      if (activeBtn) {
+        activeBtn.classList.add('bg-slate-800', 'text-white');
+        activeBtn.classList.remove('text-slate-400');
+      }
+
+      // Invocar renders según pestaña
+      if (tabName === 'orders') renderBackendOrders();
+      if (tabName === 'products') renderBackendProducts();
+      if (tabName === 'categories') renderBackendCategories();
+      if (tabName === 'extras') renderBackendExtras();
+      if (tabName === 'users') renderBackendUsers();
+      if (tabName === 'settings') populateSettingsForm();
+
+      lucide.createIcons();
+    }
+
+    /**
+     * 1. BACKEND: GESTIÓN DE PEDIDOS
+     */
+    function renderBackendOrders() {
+      const container = document.getElementById('admin-orders-list');
+      if (!container) return;
+
+      if (orders.length === 0) {
+        container.innerHTML = `
+          <div class="col-span-full py-12 text-center text-slate-500 text-xs">
+            No hay comandas registradas actualmente.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = orders.map(ord => {
+        const statusColors = {
+          "Pendiente": "bg-amber-500/20 text-amber-400 border-amber-500/30",
+          "En cocina": "bg-blue-500/20 text-blue-400 border-blue-500/30",
+          "En camino": "bg-purple-500/20 text-purple-400 border-purple-500/30",
+          "Entregado": "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+          "Cancelado": "bg-rose-500/20 text-rose-400 border-rose-500/30"
+        };
+        const colorClass = statusColors[ord.status] || "bg-slate-800 text-white";
+
+        return `
+          <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div>
+                <span class="font-mono text-xs font-black text-gold-400">${ord.id}</span>
+                <span class="text-[10px] text-slate-500 block">${ord.timestamp}</span>
+              </div>
+              <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${colorClass}">
+                ${ord.status}
+              </span>
+            </div>
+
+            <div class="text-xs space-y-1">
+              <p class="font-bold text-white flex items-center gap-1.5"><i data-lucide="user" class="w-3.5 h-3.5 text-slate-400"></i> ${ord.customer}</p>
+              <p class="text-slate-400 flex items-center gap-1.5"><i data-lucide="phone" class="w-3.5 h-3.5 text-slate-400"></i> ${ord.phone}</p>
+              <p class="text-slate-400 flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-slate-400"></i> ${ord.address}</p>
+            </div>
+
+            <div class="p-2.5 bg-slate-950 rounded-xl text-[11px] font-mono text-slate-300 whitespace-pre-line border border-slate-800/80 max-h-32 overflow-y-auto">
+              ${ord.itemsText}
+            </div>
+
+            <div class="flex items-center justify-between pt-1">
+              <span class="text-xs text-slate-400">${ord.payment}</span>
+              <span class="text-base font-black text-gold-400 font-display">$${parseFloat(ord.total).toFixed(2)}</span>
+            </div>
+
+            <!-- Cambio de Estado -->
+            <div class="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+              <span class="text-[10px] text-slate-500 uppercase font-bold">Estado:</span>
+              <select onchange="updateOrderStatus('${ord.id}', this.value)" class="bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded-lg px-2 py-1 focus:outline-none">
+                <option value="Pendiente" ${ord.status === 'Pendiente' ? 'selected' : ''}>Pendiente</option>
+                <option value="En cocina" ${ord.status === 'En cocina' ? 'selected' : ''}>En cocina</option>
+                <option value="En camino" ${ord.status === 'En camino' ? 'selected' : ''}>En camino</option>
+                <option value="Entregado" ${ord.status === 'Entregado' ? 'selected' : ''}>Entregado</option>
+                <option value="Cancelado" ${ord.status === 'Cancelado' ? 'selected' : ''}>Cancelado</option>
+              </select>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function updateOrderStatus(orderId, newStatus) {
+      const ord = orders.find(o => o.id === orderId);
+      if (ord) {
+        ord.status = newStatus;
+        saveToStorage('orders', orders);
+        showToast(`Pedido ${orderId} actualizado a "${newStatus}"`);
+        renderBackendOrders();
+      }
+    }
+
+    /**
+     * 2. BACKEND: CRUD DE PLATOS / MENÚ
+     */
+    function renderBackendProducts() {
+      const tbody = document.getElementById('admin-products-table-body');
+      if (!tbody) return;
+
+      tbody.innerHTML = products.map(p => {
+        const extraNames = (p.allowedExtras || []).map(id => {
+          const ex = extras.find(e => e.id === id);
+          return ex ? ex.name : '';
+        }).filter(Boolean).join(', ');
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition-colors">
+            <td class="p-3.5 flex items-center gap-3">
+              <img src="${p.image || 'https://placehold.co/80x80'}" class="w-10 h-10 rounded-lg object-cover border border-slate-800">
+              <div>
+                <p class="font-bold text-white text-xs">${p.name}</p>
+                <p class="text-[10px] text-slate-500 truncate max-w-xs">${p.description || ''}</p>
+              </div>
+            </td>
+            <td class="p-3.5">
+              <span class="bg-slate-800 text-gold-400 px-2 py-0.5 rounded text-[10px] font-bold">${p.categoryName}</span>
+              ${p.subcategory ? `<span class="text-slate-400 text-[10px] block mt-0.5">${p.subcategory}</span>` : ''}
+            </td>
+            <td class="p-3.5 font-bold text-white font-display text-sm">$${parseFloat(p.price).toFixed(2)}</td>
+            <td class="p-3.5 text-[10px] text-slate-400 max-w-xs truncate">${extraNames || 'Sin extras'}</td>
+            <td class="p-3.5 text-right space-x-1">
+              <button onclick="editProduct('${p.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-gold-400 rounded-lg text-xs font-semibold">Editar</button>
+              <button onclick="deleteProduct('${p.id}')" class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-semibold">Eliminar</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function openProductFormModal(productId = null) {
+      const modal = document.getElementById('modal-admin-product');
+      const title = document.getElementById('admin-product-modal-title');
+      const form = document.getElementById('admin-product-form');
+
+      // Cargar opciones de categorías
+      const catSelect = document.getElementById('prod-form-category');
+      catSelect.innerHTML = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+
+      // Cargar checklist de extras
+      const extrasList = document.getElementById('prod-form-extras-checklist');
+      extrasList.innerHTML = extras.map(e => `
+        <label class="flex items-center gap-2 p-1.5 bg-slate-900 rounded border border-slate-800 cursor-pointer text-slate-300">
+          <input type="checkbox" value="${e.id}" class="extra-checkbox-prod rounded border-slate-700 text-gold-500">
+          <span class="truncate">${e.name} (+$${parseFloat(e.price).toFixed(2)})</span>
+        </label>
+      `).join('');
+
+      if (productId) {
+        const prod = products.find(p => p.id === productId);
+        title.textContent = "Editar Plato";
+        document.getElementById('prod-form-id').value = prod.id;
+        document.getElementById('prod-form-name').value = prod.name;
+        catSelect.value = prod.categoryId;
+        updateSubcatOptions(prod.categoryId, prod.subcategory);
+        document.getElementById('prod-form-price').value = prod.price;
+        document.getElementById('prod-form-image').value = prod.image || "";
+        document.getElementById('prod-form-desc').value = prod.description || "";
+
+        // Marcar checkboxes
+        const allowed = prod.allowedExtras || [];
+        document.querySelectorAll('.extra-checkbox-prod').forEach(cb => {
+          cb.checked = allowed.includes(cb.value);
+        });
+      } else {
+        title.textContent = "Nuevo Plato";
+        form.reset();
+        document.getElementById('prod-form-id').value = "";
+        if (categories.length > 0) updateSubcatOptions(categories[0].id);
+      }
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function updateSubcatOptions(catId, selectedSub = "") {
+      const cat = categories.find(c => c.id === catId);
+      const subSelect = document.getElementById('prod-form-subcategory');
+      if (!cat || !cat.subcategories || cat.subcategories.length === 0) {
+        subSelect.innerHTML = `<option value="">General</option>`;
+        return;
+      }
+      subSelect.innerHTML = cat.subcategories.map(s => `
+        <option value="${s}" ${s === selectedSub ? 'selected' : ''}>${s}</option>
+      `).join('');
+    }
+
+    function closeProductFormModal() {
+      const modal = document.getElementById('modal-admin-product');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function handleSaveProduct(event) {
+      event.preventDefault();
+      const id = document.getElementById('prod-form-id').value;
+      const name = document.getElementById('prod-form-name').value.trim();
+      const catId = document.getElementById('prod-form-category').value;
+      const subcat = document.getElementById('prod-form-subcategory').value;
+      const price = parseFloat(document.getElementById('prod-form-price').value);
+      const image = document.getElementById('prod-form-image').value.trim();
+      const desc = document.getElementById('prod-form-desc').value.trim();
+
+      const catObj = categories.find(c => c.id === catId);
+      const catName = catObj ? catObj.name : "General";
+
+      const selectedExtras = [];
+      document.querySelectorAll('.extra-checkbox-prod:checked').forEach(cb => {
+        selectedExtras.push(cb.value);
+      });
+
+      if (id) {
+        // Actualizar
+        const idx = products.findIndex(p => p.id === id);
+        if (idx !== -1) {
+          products[idx] = { ...products[idx], name, categoryId: catId, categoryName: catName, subcategory: subcat, price, image, description: desc, allowedExtras: selectedExtras };
+          showToast("Plato actualizado con éxito");
+        }
+      } else {
+        // Crear
+        const newProduct = {
+          id: 'prod-' + Date.now(),
+          name,
+          categoryId: catId,
+          categoryName: catName,
+          subcategory: subcat,
+          price,
+          image: image || "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=600&auto=format&fit=crop&q=80",
+          description: desc,
+          allowedExtras: selectedExtras
+        };
+        products.push(newProduct);
+        showToast("Nuevo plato añadido al menú");
+      }
+
+      saveToStorage('products', products);
+      closeProductFormModal();
+      renderBackendProducts();
+      renderStoreProducts();
+    }
+
+    function editProduct(id) {
+      openProductFormModal(id);
+    }
+
+    function deleteProduct(id) {
+      if (!confirm("¿Seguro que deseas eliminar este plato del menú?")) return;
+      products = products.filter(p => p.id !== id);
+      saveToStorage('products', products);
+      if (window.dbService && window.dbService.isReady()) {
+        window.dbService.deleteRecord('products', String(id));
+      }
+      showToast("Plato eliminado");
+      renderBackendProducts();
+      renderStoreProducts();
+    }
+
+    /**
+     * 3. BACKEND: CATEGORÍAS & SUBCATEGORÍAS
+     */
+    function renderBackendCategories() {
+      const grid = document.getElementById('admin-categories-grid');
+      if (!grid) return;
+
+      grid.innerHTML = categories.map(cat => {
+        const subs = cat.subcategories || [];
+        return `
+          <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between space-y-3">
+            <div>
+              <div class="flex items-center justify-between">
+                <h4 class="font-bold text-white text-sm font-display">${cat.name}</h4>
+                <div class="space-x-1">
+                  <button onclick="editCategory('${cat.id}')" class="text-gold-400 hover:text-gold-300 text-xs font-semibold">Editar</button>
+                  <button onclick="deleteCategory('${cat.id}')" class="text-rose-400 hover:text-rose-300 text-xs font-semibold">Eliminar</button>
+                </div>
+              </div>
+              <p class="text-[11px] text-slate-500 mt-0.5">${subs.length} subcategorías asociadas</p>
+            </div>
+
+            <div class="flex flex-wrap gap-1.5 pt-2 border-t border-slate-800">
+              ${subs.length > 0 ? subs.map(s => `<span class="bg-slate-950 border border-slate-800 px-2 py-0.5 rounded text-[10px] text-slate-300">${s}</span>`).join('') : '<span class="text-[10px] text-slate-600">Sin subcategorías</span>'}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function openCategoryModal(catId = null) {
+      const modal = document.getElementById('modal-admin-category');
+      const title = document.getElementById('admin-category-modal-title');
+      const form = document.getElementById('admin-category-form');
+
+      if (catId) {
+        const cat = categories.find(c => c.id === catId);
+        title.textContent = "Editar Categoría";
+        document.getElementById('cat-form-id').value = cat.id;
+        document.getElementById('cat-form-name').value = cat.name;
+        document.getElementById('cat-form-subs').value = (cat.subcategories || []).join(', ');
+      } else {
+        title.textContent = "Nueva Categoría";
+        form.reset();
+        document.getElementById('cat-form-id').value = "";
+      }
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeCategoryModal() {
+      const modal = document.getElementById('modal-admin-category');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function handleSaveCategory(event) {
+      event.preventDefault();
+      const id = document.getElementById('cat-form-id').value;
+      const name = document.getElementById('cat-form-name').value.trim();
+      const subsRaw = document.getElementById('cat-form-subs').value;
+      const subcategories = subsRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+      if (id) {
+        const idx = categories.findIndex(c => c.id === id);
+        if (idx !== -1) {
+          categories[idx].name = name;
+          categories[idx].subcategories = subcategories;
+          showToast("Categoría actualizada");
+        }
+      } else {
+        categories.push({
+          id: 'cat-' + Date.now(),
+          name,
+          subcategories
+        });
+        showToast("Categoría creada");
+      }
+
+      saveToStorage('categories', categories);
+      closeCategoryModal();
+      renderBackendCategories();
+      renderStoreCategories();
+    }
+
+    function editCategory(id) {
+      openCategoryModal(id);
+    }
+
+    function deleteCategory(id) {
+      if (!confirm("¿Eliminar esta categoría? Los productos asociados podrían quedar desvinculados.")) return;
+      categories = categories.filter(c => c.id !== id);
+      saveToStorage('categories', categories);
+      if (window.dbService && window.dbService.isReady()) {
+        window.dbService.deleteRecord('categories', String(id));
+      }
+      showToast("Categoría eliminada");
+      renderBackendCategories();
+      renderStoreCategories();
+    }
+
+    /**
+     * 4. BACKEND: EXTRAS Y SALSAS
+     */
+    function renderBackendExtras() {
+      const tbody = document.getElementById('admin-extras-table-body');
+      if (!tbody) return;
+
+      tbody.innerHTML = extras.map(e => `
+        <tr class="hover:bg-slate-800/40 transition-colors">
+          <td class="p-3.5 font-bold text-white text-xs">${e.name}</td>
+          <td class="p-3.5 font-bold text-gold-400 font-display text-xs">+$${parseFloat(e.price).toFixed(2)}</td>
+          <td class="p-3.5 text-right space-x-1">
+            <button onclick="editExtra('${e.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-gold-400 rounded-lg text-xs font-semibold">Editar</button>
+            <button onclick="deleteExtra('${e.id}')" class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-semibold">Eliminar</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function openExtraModal(extraId = null) {
+      const modal = document.getElementById('modal-admin-extra');
+      const title = document.getElementById('admin-extra-modal-title');
+      const form = document.getElementById('admin-extra-form');
+
+      if (extraId) {
+        const ext = extras.find(e => e.id === extraId);
+        title.textContent = "Editar Extra";
+        document.getElementById('extra-form-id').value = ext.id;
+        document.getElementById('extra-form-name').value = ext.name;
+        document.getElementById('extra-form-price').value = ext.price;
+      } else {
+        title.textContent = "Nuevo Extra";
+        form.reset();
+        document.getElementById('extra-form-id').value = "";
+      }
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeExtraModal() {
+      const modal = document.getElementById('modal-admin-extra');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function handleSaveExtra(event) {
+      event.preventDefault();
+      const id = document.getElementById('extra-form-id').value;
+      const name = document.getElementById('extra-form-name').value.trim();
+      const price = parseFloat(document.getElementById('extra-form-price').value);
+
+      if (id) {
+        const idx = extras.findIndex(e => e.id === id);
+        if (idx !== -1) {
+          extras[idx] = { id, name, price };
+          showToast("Extra modificado");
+        }
+      } else {
+        extras.push({ id: 'ext-' + Date.now(), name, price });
+        showToast("Extra creado con éxito");
+      }
+
+      saveToStorage('extras', extras);
+      closeExtraModal();
+      renderBackendExtras();
+    }
+
+    function editExtra(id) {
+      openExtraModal(id);
+    }
+
+    function deleteExtra(id) {
+      if (!confirm("¿Deseas eliminar este extra?")) return;
+      extras = extras.filter(e => e.id !== id);
+      saveToStorage('extras', extras);
+      if (window.dbService && window.dbService.isReady()) {
+        window.dbService.deleteRecord('extras', String(id));
+      }
+      showToast("Extra eliminado");
+      renderBackendExtras();
+    }
+
+    /**
+     * 5. BACKEND: GESTIÓN DE USUARIOS
+     */
+    function renderBackendUsers() {
+      const tbody = document.getElementById('admin-users-table-body');
+      if (!tbody) return;
+
+      tbody.innerHTML = users.map(u => {
+        const roleLabels = {
+          master: "👑 Master",
+          menu_admin: "📋 Editor de Menú",
+          orders_op: "🛵 Operador de Pedidos"
+        };
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition-colors">
+            <td class="p-3.5 font-bold text-white text-xs">${u.username}</td>
+            <td class="p-3.5 text-xs text-slate-300">${u.fullname}</td>
+            <td class="p-3.5">
+              <span class="bg-slate-800 text-gold-400 px-2 py-0.5 rounded text-[10px] font-bold">
+                ${roleLabels[u.role] || u.role}
+              </span>
+            </td>
+            <td class="p-3.5 text-right space-x-1">
+              <button onclick="editUser('${u.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-gold-400 rounded-lg text-xs font-semibold">Editar</button>
+              ${u.role !== 'master' ? `
+                <button onclick="deleteUser('${u.id}')" class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-semibold">Eliminar</button>
+              ` : ''}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function openUserModal(userId = null) {
+      const modal = document.getElementById('modal-admin-user');
+      const title = document.getElementById('admin-user-modal-title');
+      const form = document.getElementById('admin-user-form');
+
+      if (userId) {
+        const u = users.find(x => x.id === userId);
+        title.textContent = "Editar Usuario";
+        document.getElementById('user-form-id').value = u.id;
+        document.getElementById('user-form-username').value = u.username;
+        document.getElementById('user-form-fullname').value = u.fullname;
+        document.getElementById('user-form-password').value = u.password;
+        document.getElementById('user-form-role').value = u.role;
+      } else {
+        title.textContent = "Crear Nuevo Usuario";
+        form.reset();
+        document.getElementById('user-form-id').value = "";
+      }
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeUserModal() {
+      const modal = document.getElementById('modal-admin-user');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function handleSaveUser(event) {
+      event.preventDefault();
+      const id = document.getElementById('user-form-id').value;
+      const username = document.getElementById('user-form-username').value.trim();
+      const fullname = document.getElementById('user-form-fullname').value.trim();
+      const password = document.getElementById('user-form-password').value.trim();
+      const role = document.getElementById('user-form-role').value;
+
+      if (id) {
+        const idx = users.findIndex(u => u.id === id);
+        if (idx !== -1) {
+          users[idx] = { id, username, fullname, password, role };
+          showToast("Usuario actualizado");
+        }
+      } else {
+        // Verificar que no se repita el username
+        if (users.some(u => u.username === username)) {
+          showToast("El nombre de usuario ya existe", true);
+          return;
+        }
+        users.push({ id: 'u-' + Date.now(), username, fullname, password, role });
+        showToast("Usuario creado con éxito");
+      }
+
+      saveToStorage('users', users);
+      closeUserModal();
+      renderBackendUsers();
+    }
+
+    function editUser(id) {
+      openUserModal(id);
+    }
+
+    function deleteUser(id) {
+      const u = users.find(x => x.id === id);
+      if (u && u.role === 'master') {
+        showToast("No se puede eliminar el usuario master", true);
+        return;
+      }
+      if (!confirm("¿Deseas revocar el acceso a este usuario?")) return;
+      users = users.filter(x => x.id !== id);
+      saveToStorage('users', users);
+      if (window.dbService && window.dbService.isReady()) {
+        window.dbService.deleteRecord('users', String(id));
+      }
+      showToast("Usuario eliminado");
+      renderBackendUsers();
+    }
+
+    /**
+     * 6. BACKEND: AJUSTES Y CARGA DE LOGOTIPO
+     */
+    function populateSettingsForm() {
+      document.getElementById('set-name').value = chifaConfig.name;
+      document.getElementById('set-slogan').value = chifaConfig.slogan;
+      document.getElementById('set-phone').value = chifaConfig.phone;
+      document.getElementById('set-delivery').value = chifaConfig.deliveryFee;
+      document.getElementById('set-address').value = chifaConfig.address;
+      document.getElementById('set-bank').value = chifaConfig.bankDetails;
+
+      const preview = document.getElementById('settings-logo-preview');
+      const placeholder = document.getElementById('settings-logo-placeholder');
+      if (chifaConfig.logoUrl) {
+        preview.src = chifaConfig.logoUrl;
+        preview.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+      } else {
+        preview.classList.add('hidden');
+        placeholder.classList.remove('hidden');
+      }
+    }
+
+    function handleLogoUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const base64Img = e.target.result;
+        chifaConfig.logoUrl = base64Img;
+        saveToStorage('config', chifaConfig);
+
+        // Actualizar vistas inmediatas
+        const preview = document.getElementById('settings-logo-preview');
+        const placeholder = document.getElementById('settings-logo-placeholder');
+        preview.src = base64Img;
+        preview.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+
+        applyBranding();
+        showToast("¡Logotipo actualizado con éxito!");
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function handleSaveSettings(event) {
+      event.preventDefault();
+      chifaConfig.name = document.getElementById('set-name').value.trim();
+      chifaConfig.slogan = document.getElementById('set-slogan').value.trim();
+      chifaConfig.phone = document.getElementById('set-phone').value.trim();
+      chifaConfig.deliveryFee = parseFloat(document.getElementById('set-delivery').value);
+      chifaConfig.address = document.getElementById('set-address').value.trim();
+      chifaConfig.bankDetails = document.getElementById('set-bank').value.trim();
+
+      saveToStorage('config', chifaConfig);
+      applyBranding();
+      showToast("Configuración del Chifa guardada");
+    }
+
+    /**
+     * UTILIDAD DE TOASTS
+     */
+    let toastTimeout;
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      const msg = document.getElementById('toast-message');
+      const iconWrap = document.getElementById('toast-icon-wrap');
+
+      if (!toast || !msg) return;
+      clearTimeout(toastTimeout);
+
+      msg.textContent = message;
+      if (isError) {
+        iconWrap.className = "w-9 h-9 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0";
+        iconWrap.innerHTML = `<i data-lucide="alert-circle" class="w-5 h-5"></i>`;
+      } else {
+        iconWrap.className = "w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0";
+        iconWrap.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5"></i>`;
+      }
+      lucide.createIcons();
+
+      toast.classList.remove('opacity-0', '-translate-y-4', 'pointer-events-none');
+      toast.classList.add('opacity-100', 'translate-y-0', 'pointer-events-auto');
+
+      toastTimeout = setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-4', 'pointer-events-none');
+        toast.classList.remove('opacity-100', 'translate-y-0', 'pointer-events-auto');
+      }, 3000);
+    }
+  </script>
+
+</body>
+</html>
