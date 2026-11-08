@@ -158,9 +158,34 @@
     ::-webkit-scrollbar-track { background: #0f172a; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
     ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    @keyframes marqueeScroll {
+      0% { transform: translateX(0%); }
+      100% { transform: translateX(-50%); }
+    }
+    .animate-marquee {
+      display: flex;
+      width: max-content;
+      animation: marqueeScroll 28s linear infinite;
+    }
+    .animate-marquee:hover {
+      animation-play-state: paused;
+    }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col selection:bg-chifa-600 selection:text-white">
+
+  <!-- ======================================================== -->
+  <!-- MARQUESINA PROMOCIONAL SUPERIOR EDITABLE                 -->
+  <!-- ======================================================== -->
+  <div id="top-marquee-wrapper" class="bg-gradient-to-r from-chifa-800 via-amber-600 to-chifa-800 text-white py-2 overflow-hidden border-b border-gold-500/30 relative z-40">
+    <div class="animate-marquee flex items-center gap-12 text-xs sm:text-sm font-extrabold tracking-wide uppercase">
+      <span class="marquee-item flex items-center gap-2 whitespace-nowrap px-4"></span>
+      <span class="marquee-item flex items-center gap-2 whitespace-nowrap px-4"></span>
+      <span class="marquee-item flex items-center gap-2 whitespace-nowrap px-4"></span>
+      <span class="marquee-item flex items-center gap-2 whitespace-nowrap px-4"></span>
+    </div>
+  </div>
 
   <!-- ======================================================== -->
   <!-- TOAST NOTIFICACIONES FLOTANTES                           -->
@@ -258,7 +283,7 @@
             <div class="text-emerald-400 font-bold text-lg flex items-center justify-center gap-1">
               <i data-lucide="bike" class="w-4 h-4"></i> <span id="hero-shipping-display">$2.00</span>
             </div>
-            <p class="text-slate-400 text-xs mt-0.5">Costo de despacho</p>
+            <p id="hero-free-shipping-hint" class="text-slate-400 text-[11px] mt-0.5">Costo de despacho</p>
           </div>
           <div class="col-span-2 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80 text-center flex items-center justify-center gap-2 text-[11px] text-slate-400">
             <span id="cloud-status-indicator" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -461,12 +486,24 @@
 
     <!-- Resumen y Despacho -->
     <div id="cart-summary-box" class="p-5 bg-slate-950 border-t border-slate-800 space-y-3">
+      
+      <!-- Barra de Progreso para Envío Gratis -->
+      <div id="free-shipping-progress-box" class="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+        <div class="flex items-center justify-between text-[11px]">
+          <span id="free-shipping-msg" class="font-semibold text-slate-300">Agrega más para envío gratis</span>
+          <span id="free-shipping-pct" class="font-bold text-gold-400">0%</span>
+        </div>
+        <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+          <div id="free-shipping-bar" class="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+
       <div class="space-y-1.5 text-xs text-slate-400">
         <div class="flex justify-between">
           <span>Subtotal Comida</span>
           <span class="font-bold text-white" id="summary-subtotal">$0.00</span>
         </div>
-        <div class="flex justify-between">
+        <div class="flex justify-between items-center">
           <span>Envío a Domicilio</span>
           <span class="font-bold text-white" id="summary-delivery">$0.00</span>
         </div>
@@ -1008,6 +1045,18 @@
                 <label class="block text-xs font-semibold text-slate-300 mb-1" for="set-delivery">Costo Envío Domicilio ($)</label>
                 <input type="number" step="0.25" id="set-delivery" required class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
               </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-emerald-400 mb-1" for="set-free-threshold">Envío Gratis desde compra de ($)</label>
+                <input type="number" step="0.50" min="0" id="set-free-threshold" required placeholder="Ej: 20.00 (0 para desactivar)" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-emerald-500/40 text-xs text-white focus:outline-none focus:border-emerald-400">
+                <span class="text-[10px] text-slate-500">Pon 0 si no deseas aplicar envío gratis automático</span>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-gold-400 mb-1" for="set-marquee">Texto de la Marquesina Promocional Superior</label>
+                <input type="text" id="set-marquee" placeholder="Ej: 🏮 ¡ENVÍO GRATIS EN PEDIDOS DESDE $20.00! 🛵 PIDE TU COMBO CHIFERO HOY 🥢" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-gold-500/40 text-xs text-white focus:outline-none focus:border-gold-400">
+                <span class="text-[10px] text-slate-500">Déjalo en blanco si deseas ocultar la marquesina</span>
+              </div>
             </div>
 
             <div>
@@ -1289,6 +1338,8 @@
       slogan: "Auténtico Sabor Oriental al Wok",
       phone: "593998765432",
       deliveryFee: 2.00,
+      freeShippingThreshold: 20.00,
+      marqueeText: "🏮 ¡PROMO IMPERIAL! ENVÍO A DOMICILIO GRATIS EN COMPRAS DESDE $20.00 🛵 • PRUEBA NUESTRO CHAULAFÁN ESPECIAL DRAGÓN AL WOK 🔥 • SABOR 100% TRADICIONAL 🥢",
       address: "Av. República y Amazonas, Edificio Wok Real, Quito",
       bankDetails: "Banco Pichincha - Cta Corriente # 2100889922\nTitular: Chifa Dragón Dorado Cía. Ltda.\nRUC: 1792984501001\nCorreo: pagos@chifadragondorado.com",
       logoUrl: ""
@@ -1748,6 +1799,28 @@
       document.getElementById('nav-brand-slogan').textContent = chifaConfig.slogan;
       document.getElementById('hero-shipping-display').textContent = `$${parseFloat(chifaConfig.deliveryFee).toFixed(2)}`;
       
+      const threshold = parseFloat(chifaConfig.freeShippingThreshold) || 0;
+      const heroFreeHint = document.getElementById('hero-free-shipping-hint');
+      if (heroFreeHint) {
+        heroFreeHint.textContent = threshold > 0 
+          ? `¡Gratis desde $${threshold.toFixed(2)}!` 
+          : 'Costo de despacho';
+      }
+
+      // Actualizar Marquesina Superior Editable
+      const marqueeWrapper = document.getElementById('top-marquee-wrapper');
+      const mText = (chifaConfig.marqueeText !== undefined ? chifaConfig.marqueeText : DEFAULT_CHIFA_CONFIG.marqueeText).trim();
+      if (marqueeWrapper) {
+        if (mText) {
+          marqueeWrapper.classList.remove('hidden');
+          document.querySelectorAll('.marquee-item').forEach(el => {
+            el.textContent = mText;
+          });
+        } else {
+          marqueeWrapper.classList.add('hidden');
+        }
+      }
+
       const logoImg = document.getElementById('nav-brand-logo');
       const logoFallback = document.getElementById('nav-brand-fallback');
       if (chifaConfig.logoUrl) {
@@ -2123,7 +2196,12 @@
     function updateCartDisplay() {
       const totalCount = cart.reduce((sum, i) => sum + i.quantity, 0);
       const subtotal = cart.reduce((sum, i) => sum + i.subtotal, 0);
-      const deliveryFee = totalCount > 0 ? parseFloat(chifaConfig.deliveryFee) : 0;
+      const baseDelivery = parseFloat(chifaConfig.deliveryFee) || 0;
+      const freeThreshold = parseFloat(chifaConfig.freeShippingThreshold) || 0;
+
+      // Condicional de Envío Gratis según el monto de compra
+      const qualifiesFreeShipping = (freeThreshold > 0 && subtotal >= freeThreshold);
+      const deliveryFee = totalCount > 0 ? (qualifiesFreeShipping ? 0 : baseDelivery) : 0;
       const grandTotal = totalCount > 0 ? (subtotal + deliveryFee) : 0;
 
       document.getElementById('cart-counter-badge').textContent = totalCount;
@@ -2132,7 +2210,38 @@
       document.getElementById('drawer-items-subtitle').textContent = `${totalCount} plato${totalCount === 1 ? '' : 's'} en la comanda`;
 
       document.getElementById('summary-subtotal').textContent = `$${subtotal.toFixed(2)}`;
-      document.getElementById('summary-delivery').textContent = `$${deliveryFee.toFixed(2)}`;
+      
+      const deliverySpan = document.getElementById('summary-delivery');
+      if (totalCount > 0 && qualifiesFreeShipping) {
+        deliverySpan.innerHTML = `<span class="line-through text-slate-500 mr-1">$${baseDelivery.toFixed(2)}</span><span class="text-emerald-400 font-extrabold">¡GRATIS!</span>`;
+      } else {
+        deliverySpan.textContent = `$${deliveryFee.toFixed(2)}`;
+      }
+
+      // Actualizar indicador de progreso hacia envío gratuito
+      const progBox = document.getElementById('free-shipping-progress-box');
+      if (progBox) {
+        if (freeThreshold > 0) {
+          progBox.classList.remove('hidden');
+          const pct = Math.min(100, Math.round((subtotal / freeThreshold) * 100));
+          const msgEl = document.getElementById('free-shipping-msg');
+          const pctEl = document.getElementById('free-shipping-pct');
+          const barEl = document.getElementById('free-shipping-bar');
+
+          if (barEl) barEl.style.width = `${pct}%`;
+          if (pctEl) pctEl.textContent = `${pct}%`;
+
+          if (subtotal >= freeThreshold) {
+            if (msgEl) msgEl.innerHTML = `<span class="text-emerald-400 font-bold">🎉 ¡Felicidades! Tienes envío a domicilio GRATIS</span>`;
+          } else {
+            const missing = freeThreshold - subtotal;
+            if (msgEl) msgEl.innerHTML = `Te faltan <strong class="text-gold-400">$${missing.toFixed(2)}</strong> para <strong class="text-emerald-400">Envío GRATIS</strong>`;
+          }
+        } else {
+          progBox.classList.add('hidden');
+        }
+      }
+
       document.getElementById('summary-grand-total').textContent = `$${grandTotal.toFixed(2)}`;
       document.getElementById('checkout-modal-total').textContent = `$${grandTotal.toFixed(2)}`;
 
@@ -2278,7 +2387,11 @@
         itemsLines += line;
       });
 
-      const grandTotal = subtotal + parseFloat(chifaConfig.deliveryFee);
+      const baseDelivery = parseFloat(chifaConfig.deliveryFee) || 0;
+      const freeThreshold = parseFloat(chifaConfig.freeShippingThreshold) || 0;
+      const isFreeShipping = (freeThreshold > 0 && subtotal >= freeThreshold);
+      const appliedDeliveryFee = isFreeShipping ? 0 : baseDelivery;
+      const grandTotal = subtotal + appliedDeliveryFee;
 
       const newOrderObj = {
         id: "ORD-" + Math.floor(1000 + Math.random() * 9000),
@@ -2302,7 +2415,11 @@
       msg += `----------------------------------\n`;
       msg += `🛒 *Detalle de la Comanda:*\n`;
       msg += itemsLines;
-      msg += ` - Costo de Envío Fijo: $${parseFloat(chifaConfig.deliveryFee).toFixed(2)}\n`;
+      if (isFreeShipping) {
+        msg += ` - Envío a Domicilio: ¡GRATIS! (Compra mayor a $${freeThreshold.toFixed(2)})\n`;
+      } else {
+        msg += ` - Costo de Envío a Domicilio: $${appliedDeliveryFee.toFixed(2)}\n`;
+      }
       msg += `----------------------------------\n`;
       msg += `💵 *Forma de Pago:* ${payDetail}\n`;
       msg += `💰 *TOTAL A PAGAR:* $${grandTotal.toFixed(2)}\n\n`;
@@ -2988,6 +3105,8 @@
       document.getElementById('set-slogan').value = chifaConfig.slogan;
       document.getElementById('set-phone').value = chifaConfig.phone;
       document.getElementById('set-delivery').value = chifaConfig.deliveryFee;
+      document.getElementById('set-free-threshold').value = chifaConfig.freeShippingThreshold !== undefined ? chifaConfig.freeShippingThreshold : 20.00;
+      document.getElementById('set-marquee').value = chifaConfig.marqueeText !== undefined ? chifaConfig.marqueeText : DEFAULT_CHIFA_CONFIG.marqueeText;
       document.getElementById('set-address').value = chifaConfig.address;
       document.getElementById('set-bank').value = chifaConfig.bankDetails;
 
@@ -3030,12 +3149,15 @@
       chifaConfig.name = document.getElementById('set-name').value.trim();
       chifaConfig.slogan = document.getElementById('set-slogan').value.trim();
       chifaConfig.phone = document.getElementById('set-phone').value.trim();
-      chifaConfig.deliveryFee = parseFloat(document.getElementById('set-delivery').value);
+      chifaConfig.deliveryFee = parseFloat(document.getElementById('set-delivery').value) || 0;
+      chifaConfig.freeShippingThreshold = parseFloat(document.getElementById('set-free-threshold').value) || 0;
+      chifaConfig.marqueeText = document.getElementById('set-marquee').value.trim();
       chifaConfig.address = document.getElementById('set-address').value.trim();
       chifaConfig.bankDetails = document.getElementById('set-bank').value.trim();
 
       saveToStorage('config', chifaConfig);
       applyBranding();
+      updateCartDisplay();
       showToast("Configuración del Chifa guardada");
     }
 
