@@ -21,49 +21,53 @@
     import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, collection, doc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    // Variables de configuración de Firebase del entorno o valores por defecto
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'chifa-dragon-dorado';
-    const firebaseConfig = typeof __firebase_config !== 'undefined' 
+    // 1. Priorizar configuración guardada por el usuario en localStorage, luego entorno __firebase_config, o fallback local
+    let storedConfig = null;
+    try {
+      const saved = localStorage.getItem('chifa_custom_firebase_config');
+      if (saved) storedConfig = JSON.parse(saved);
+    } catch(e) {}
+
+    const firebaseConfig = storedConfig || (typeof __firebase_config !== 'undefined' 
       ? JSON.parse(__firebase_config) 
       : {
-  apiKey: "AIzaSyCl9mvneB0lChjaHUr9dTojHyV1brNgo4U",
-  authDomain: "chifaapp593.firebaseapp.com",
-  databaseURL: "https://chifaapp593-default-rtdb.firebaseio.com",
-  projectId: "chifaapp593",
-  storageBucket: "chifaapp593.firebasestorage.app",
-  messagingSenderId: "774336170077",
-  appId: "1:774336170077:web:115ae7a511bb787323a5b4",
-  measurementId: "G-GK9FNDT97X"
-};
+          apiKey: "AIzaSyDemoKeyForPlaceholderOnly12345678",
+          authDomain: "chifa-app-demo.firebaseapp.com",
+          projectId: "chifa-app-demo",
+          storageBucket: "chifa-app-demo.appspot.com",
+          messagingSenderId: "123456789012",
+          appId: "1:123456789012:web:abcdef123456"
+        });
+
+    const appId = typeof __app_id !== 'undefined' ? __app_id : (firebaseConfig.projectId || 'chifa-dragon-dorado');
 
     let app, db, auth;
     let isCloudReady = false;
+    let currentUserAuth = null;
 
     try {
       app = initializeApp(firebaseConfig);
       db = getFirestore(app);
       auth = getAuth(app);
     } catch (e) {
-      console.warn("Firebase no configurado o clave placeholder:", e);
+      console.warn("Inicialización básica de Firebase:", e);
     }
 
-    // Exportar al scope global para sincronización con la app
+    // Servicio global para interactuar con Firestore
     window.dbService = {
-      isReady: () => isCloudReady,
+      isReady: () => isCloudReady && !!auth?.currentUser,
       appId: appId,
       db: db,
       auth: auth,
+      rawConfig: firebaseConfig,
       collection: collection,
       doc: doc,
-      getDocs: getDocs,
-      setDoc: setDoc,
-      updateDoc: updateDoc,
-      deleteDoc: deleteDoc,
       onSnapshot: onSnapshot,
+      getCurrentUserId: () => auth?.currentUser?.uid || null,
       saveDoc: async (colName, docId, data) => {
-        if (!isCloudReady || !db) return false;
+        if (!isCloudReady || !db || !auth?.currentUser) return false;
         try {
-          const docRef = doc(db, 'artifacts', appId, 'public', 'data', colName, docId);
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', colName, String(docId));
           await setDoc(docRef, data, { merge: true });
           return true;
         } catch (err) {
@@ -72,19 +76,32 @@
         }
       },
       deleteRecord: async (colName, docId) => {
-        if (!isCloudReady || !db) return false;
+        if (!isCloudReady || !db || !auth?.currentUser) return false;
         try {
-          const docRef = doc(db, 'artifacts', appId, 'public', 'data', colName, docId);
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', colName, String(docId));
           await deleteDoc(docRef);
           return true;
         } catch (err) {
           console.error(`Error eliminando en Firestore:`, err);
           return false;
         }
+      },
+      fetchCollection: async (colName) => {
+        if (!isCloudReady || !db || !auth?.currentUser) return null;
+        try {
+          const colRef = collection(db, 'artifacts', appId, 'public', 'data', colName);
+          const snap = await getDocs(colRef);
+          const list = [];
+          snap.forEach(d => list.push(d.data()));
+          return list;
+        } catch (err) {
+          console.error(`Error leyendo colección ${colName}:`, err);
+          return null;
+        }
       }
     };
 
-    // Autenticación asíncrona antes de cualquier consulta a Firestore
+    // Autenticación asíncrona prioritaria
     async function initCloudAuth() {
       if (!auth) return;
       try {
@@ -93,10 +110,12 @@
         } else {
           await signInAnonymously(auth);
         }
+        currentUserAuth = auth.currentUser;
         isCloudReady = true;
-        document.dispatchEvent(new CustomEvent('cloud-db-ready'));
+        document.dispatchEvent(new CustomEvent('cloud-db-ready', { detail: { uid: currentUserAuth?.uid, projectId: firebaseConfig.projectId } }));
       } catch (err) {
-        console.warn("Modo local activo (no se pudo conectar a Firebase Cloud):", err.message);
+        console.warn("Autenticación Firebase en modo local o pendiente de credenciales reales:", err.message);
+        document.dispatchEvent(new CustomEvent('cloud-db-error', { detail: { error: err.message } }));
       }
     }
 
@@ -135,17 +154,10 @@
   </script>
 
   <style>
-    /* Estilos personalizados y utilidades de scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #1e1e24; }
-    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 9999px; }
-    ::-webkit-scrollbar-thumb:hover { background: #64748b; }
-    .gold-gradient {
-      background: linear-gradient(135deg, #facc15 0%, #ca8a04 100%);
-    }
-    .red-gradient {
-      background: linear-gradient(135deg, #b91c1c 0%, #450a0a 100%);
-    }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col selection:bg-chifa-600 selection:text-white">
@@ -248,9 +260,9 @@
             </div>
             <p class="text-slate-400 text-xs mt-0.5">Costo de despacho</p>
           </div>
-          <div class="col-span-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800/80 text-center flex items-center justify-center gap-2 text-[11px] text-slate-400">
-            <span id="cloud-status-indicator" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-            <span id="cloud-status-text">Sincronizando con Base de Datos Google Firestore...</span>
+          <div class="col-span-2 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80 text-center flex items-center justify-center gap-2 text-[11px] text-slate-400">
+            <span id="cloud-status-indicator" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="cloud-status-text">Base de datos: Conectando...</span>
           </div>
         </div>
       </div>
@@ -294,7 +306,7 @@
         <div class="w-20 h-20 rounded-3xl bg-slate-900 text-slate-500 flex items-center justify-center mb-4 text-3xl">
           🥢
         </div>
-        <h4 class="text-lg font-bold text-white">No encontramos productos</h4>
+        <h4 class="text-lg font-bold text-white">No encontramos platos con ese criterio</h4>
         <p class="text-sm text-slate-400 mt-1 max-w-sm">Intenta con otra palabra clave o selecciona otra categoría del Chifa.</p>
         <button onclick="resetStoreFilters()" class="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gold-400 text-xs font-bold rounded-xl transition-all">
           Ver todo el menú
@@ -348,11 +360,11 @@
       <div class="p-5 flex-1 overflow-y-auto space-y-4">
         <div>
           <div class="flex items-start justify-between gap-3">
-            <h3 id="modal-product-title" class="text-xl font-bold text-white font-display">Chaufa Especial de Mariscos</h3>
-            <span id="modal-product-price" class="text-xl font-black text-gold-400 shrink-0">$8.50</span>
+            <h3 id="modal-product-title" class="text-xl font-bold text-white font-display">Plato Oriental</h3>
+            <span id="modal-product-price" class="text-xl font-black text-gold-400 shrink-0">$0.00</span>
           </div>
           <p id="modal-product-desc" class="text-xs text-slate-400 mt-1.5 leading-relaxed">
-            Arroz frito al wok con camarones, calamares frescos, cebollino chino, pimientos y tortilla de huevo.
+            Descripción del plato.
           </p>
         </div>
 
@@ -366,7 +378,7 @@
           </div>
           
           <div id="modal-extras-list" class="space-y-2">
-            <!-- Lista interactiva de checkboxes de extras -->
+            <!-- Lista interactiva de extras -->
           </div>
         </div>
 
@@ -400,10 +412,10 @@
         <!-- Botón Agregar con Total Dinámico -->
         <button 
           onclick="confirmAddToCart()" 
-          class="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-chifa-600 to-chifa-700 hover:from-chifa-500 hover:to-chifa-600 text-white font-bold text-sm shadow-lg shadow-chifa-950/50 flex items-center justify-between transition-all"
+          class="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-chifa-600 to-chifa-700 hover:from-chifa-500 hover:to-chifa-600 text-white font-bold text-sm shadow-lg shadow-chifa-950/50 flex items-center justify-between transition-all cursor-pointer"
         >
           <span>Agregar al Carrito</span>
-          <span id="modal-add-button-total" class="font-black text-gold-300">$8.50</span>
+          <span id="modal-add-button-total" class="font-black text-gold-300">$0.00</span>
         </button>
       </div>
 
@@ -443,7 +455,7 @@
       <div class="w-16 h-16 rounded-2xl bg-slate-800/60 text-slate-500 flex items-center justify-center mb-3">
         <i data-lucide="shopping-bag" class="w-8 h-8"></i>
       </div>
-      <h4 class="font-bold text-white text-base">Tu canasta está vacía</h4>
+      <h4 class="font-bold text-white text-base">Tu comanda está vacía</h4>
       <p class="text-xs text-slate-400 mt-1 max-w-xs">Aún no has agregado ningún plato de nuestro menú de chifa.</p>
     </div>
 
@@ -467,7 +479,7 @@
       <button 
         id="btn-open-checkout"
         onclick="openCheckoutModal()" 
-        class="w-full py-3.5 px-4 bg-gradient-to-r from-chifa-600 to-chifa-700 hover:from-chifa-500 hover:to-chifa-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-chifa-950 flex items-center justify-center gap-2 active:scale-95 transition-all"
+        class="w-full py-3.5 px-4 bg-gradient-to-r from-chifa-600 to-chifa-700 hover:from-chifa-500 hover:to-chifa-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-chifa-950 flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
       >
         <span>Proceder al Despacho</span>
         <i data-lucide="arrow-right" class="w-4 h-4"></i>
@@ -537,7 +549,7 @@
               type="text" 
               id="cust-address" 
               required
-              placeholder="Ej. Av. América N24-102 y Colón, Dpto 302" 
+              placeholder="Ej. Av. Amazonas N24-102 y Colón, Dpto 302" 
               class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-gold-500"
             >
           </div>
@@ -582,7 +594,6 @@
 
           <!-- Detalles condicionales de pago -->
           <div class="mt-3">
-            <!-- Efectivo: Cambio -->
             <div id="pay-detail-cash" class="p-3 bg-slate-950 rounded-xl border border-slate-800">
               <label class="block text-[11px] font-semibold text-slate-300 mb-1" for="cust-cash-change">
                 ¿Con cuánto vas a pagar? (Para que el motorizado lleve cambio):
@@ -596,7 +607,6 @@
               >
             </div>
 
-            <!-- Transferencia: Cuentas -->
             <div id="pay-detail-transfer" class="hidden p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-2">
               <div class="flex items-center justify-between">
                 <span class="font-bold text-gold-400">Datos Bancarios para Transferir:</span>
@@ -613,10 +623,9 @@
               <p class="text-[10px] text-slate-400 italic">Podrás adjuntar la foto del comprobante al abrir el chat de WhatsApp.</p>
             </div>
 
-            <!-- Tarjeta: Aviso POS -->
             <div id="pay-detail-card" class="hidden p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-300 flex items-center gap-2">
               <i data-lucide="credit-card" class="w-5 h-5 text-gold-400 shrink-0"></i>
-              <span>El repartidor llevará un punto de venta (datáfono) inalámbrico para procesar tu tarjeta Visa o Mastercard.</span>
+              <span>El repartidor llevará un punto de venta inalámbrico (datáfono) para procesar tu tarjeta Visa o Mastercard.</span>
             </div>
           </div>
         </div>
@@ -665,7 +674,7 @@
               type="text" 
               id="login-username" 
               required
-              placeholder="master, menu_editor, operador..." 
+              placeholder="master, menu_admin, cajero..." 
               class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-gold-500"
             >
           </div>
@@ -749,7 +758,7 @@
             <i data-lucide="users" class="w-3.5 h-3.5"></i> Usuarios
           </button>
           <button id="tab-btn-settings" onclick="switchBackendTab('settings')" class="px-3.5 py-2 rounded-xl font-bold transition-all text-slate-400 hover:text-white flex items-center gap-1.5">
-            <i data-lucide="settings" class="w-3.5 h-3.5"></i> Ajustes Chifa
+            <i data-lucide="settings" class="w-3.5 h-3.5"></i> Ajustes & Base de Datos
           </button>
 
           <!-- Cerrar Sesión -->
@@ -887,11 +896,69 @@
           </div>
         </div>
 
-        <!-- 6. PESTAÑA: AJUSTES GENERALES DEL RESTAURANTE (SOLO MASTER) -->
+        <!-- 6. PESTAÑA: AJUSTES GENERALES DEL RESTAURANTE & FIRESTORE -->
         <div id="backend-panel-settings" class="hidden space-y-6 max-w-3xl">
           <div>
-            <h3 class="text-xl font-bold text-white font-display">Ajustes Generales del Chifa</h3>
-            <p class="text-xs text-slate-400">Personaliza la marca, logotipo y teléfonos para recibir pedidos</p>
+            <h3 class="text-xl font-bold text-white font-display">Ajustes Generales del Chifa & Base de Datos</h3>
+            <p class="text-xs text-slate-400">Conecta tu propia base de datos de Google y personaliza tu restaurante</p>
+          </div>
+
+          <!-- PANEL DE CONFIGURACIÓN DIRECTA DE FIRESTORE -->
+          <div class="bg-slate-900 border-2 border-gold-500/30 p-5 rounded-3xl space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-gold-500/10 text-gold-400 border border-gold-500/30 flex items-center justify-center">
+                  <i data-lucide="database" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h4 class="text-sm font-bold text-white font-display">Conexión con Google Cloud Firestore</h4>
+                  <p class="text-[11px] text-slate-400" id="db-connection-details">Cargando estado...</p>
+                </div>
+              </div>
+              <span id="admin-db-status-badge" class="px-2.5 py-1 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Verificando...
+              </span>
+            </div>
+
+            <!-- Contador de Documentos Sincronizados -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+              <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <span class="text-slate-500 text-[10px] block uppercase font-bold">Platos</span>
+                <span class="text-base font-black text-white" id="stat-cloud-products">0</span>
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <span class="text-slate-500 text-[10px] block uppercase font-bold">Pedidos</span>
+                <span class="text-base font-black text-white" id="stat-cloud-orders">0</span>
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <span class="text-slate-500 text-[10px] block uppercase font-bold">Categorías</span>
+                <span class="text-base font-black text-white" id="stat-cloud-categories">0</span>
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <span class="text-slate-500 text-[10px] block uppercase font-bold">Extras</span>
+                <span class="text-base font-black text-white" id="stat-cloud-extras">0</span>
+              </div>
+            </div>
+
+            <!-- Botones de Acción Nube -->
+            <div class="pt-2 flex flex-wrap gap-2">
+              <button 
+                type="button" 
+                onclick="seedAllDataToCloud()" 
+                class="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-emerald-950 transition-all cursor-pointer"
+              >
+                <i data-lucide="cloud-upload" class="w-4 h-4"></i>
+                <span>Poblar / Sincronizar Datos Iniciales en la Nube</span>
+              </button>
+              <button 
+                type="button" 
+                onclick="openFirebaseConfigModal()" 
+                class="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-gold-400 text-xs font-semibold rounded-xl flex items-center gap-1.5"
+              >
+                <i data-lucide="key" class="w-3.5 h-3.5"></i>
+                <span>Ingresar Claves de mi Proyecto Google</span>
+              </button>
+            </div>
           </div>
 
           <form onsubmit="handleSaveSettings(event)" class="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-5">
@@ -967,6 +1034,56 @@
   </div>
 
   <!-- ======================================================== -->
+  <!-- MODAL: CONECTAR PROYECTO GOOGLE FIRESTORE               -->
+  <!-- ======================================================== -->
+  <div id="modal-firebase-config" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl my-6 space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div class="flex items-center gap-2">
+          <i data-lucide="database" class="w-5 h-5 text-gold-400"></i>
+          <h3 class="font-bold text-white text-base font-display">Conectar tu Google Firebase</h3>
+        </div>
+        <button onclick="closeFirebaseConfigModal()" class="w-7 h-7 rounded-lg bg-slate-800 text-slate-400 flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <p class="text-xs text-slate-400">
+        Pega a continuación el objeto de configuración que te entrega la consola de Firebase al registrar tu aplicación Web en <strong class="text-gold-400">Configuración del proyecto > Tus apps > SDK setup</strong>.
+      </p>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 mb-1">Objeto de Configuración Firebase (JSON o JS):</label>
+        <textarea 
+          id="custom-firebase-input" 
+          rows="8" 
+          placeholder='{
+  "apiKey": "AIzaSy...",
+  "authDomain": "tu-chifa.firebaseapp.com",
+  "projectId": "tu-chifa",
+  "storageBucket": "tu-chifa.appspot.com",
+  "messagingSenderId": "123456789",
+  "appId": "1:123456789:web:..."
+}' 
+          class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-emerald-400 focus:outline-none focus:border-gold-500"
+        ></textarea>
+      </div>
+
+      <div class="flex items-center justify-between pt-2">
+        <button 
+          type="button" 
+          onclick="resetFirebaseConfig()" 
+          class="text-xs text-rose-400 hover:text-rose-300 font-semibold"
+        >
+          Restablecer a valores por defecto
+        </button>
+        <div class="flex gap-2">
+          <button type="button" onclick="closeFirebaseConfigModal()" class="px-3.5 py-2 text-xs font-bold text-slate-400 hover:text-white">Cancelar</button>
+          <button type="button" onclick="saveCustomFirebaseConfig()" class="px-5 py-2 bg-chifa-600 hover:bg-chifa-500 text-white font-bold text-xs rounded-xl shadow-md shadow-chifa-950">Guardar y Conectar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
   <!-- MODALES ADMINISTRATIVOS (CRUD PLATO, CATEGORÍA, EXTRA, USER)-->
   <!-- ======================================================== -->
   
@@ -990,13 +1107,11 @@
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Categoría</label>
             <select id="prod-form-category" onchange="updateSubcatOptions(this.value)" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
-              <!-- Se puebla dinámicamente -->
             </select>
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Subcategoría</label>
             <select id="prod-form-subcategory" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
-              <!-- Se puebla según categoría -->
             </select>
           </div>
         </div>
@@ -1017,11 +1132,9 @@
           <textarea id="prod-form-desc" rows="2" class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"></textarea>
         </div>
 
-        <!-- Extras permitidos para este plato -->
         <div>
           <label class="block text-xs font-bold uppercase tracking-wider text-gold-400 mb-1.5">Extras Habilitados para este plato</label>
           <div id="prod-form-extras-checklist" class="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-xs">
-            <!-- Checkboxes de extras -->
           </div>
         </div>
 
@@ -1145,11 +1258,11 @@
     const DEFAULT_CHIFA_CONFIG = {
       name: "CHIFA DRAGÓN DORADO",
       slogan: "Auténtico Sabor Oriental al Wok",
-      phone: "593998765432", // Número receptor de WhatsApp
+      phone: "593998765432",
       deliveryFee: 2.00,
       address: "Av. República y Amazonas, Edificio Wok Real, Quito",
       bankDetails: "Banco Pichincha - Cta Corriente # 2100889922\nTitular: Chifa Dragón Dorado Cía. Ltda.\nRUC: 1792984501001\nCorreo: pagos@chifadragondorado.com",
-      logoUrl: "" // Base64 o URL personalizada
+      logoUrl: ""
     };
 
     const DEFAULT_CATEGORIES = [
@@ -1309,8 +1422,8 @@
 
     function saveToStorage(key, data) {
       localStorage.setItem('chifa_' + key, JSON.stringify(data));
-      // Si la base de datos de Google está conectada, sincronizar en la nube
       syncToFirestore(key, data);
+      updateCloudCounters();
     }
 
     async function syncToFirestore(collectionKey, data) {
@@ -1319,24 +1432,114 @@
       if (collectionKey === 'config') {
         await window.dbService.saveDoc('settings', 'general', data);
       } else if (Array.isArray(data)) {
-        // Guardar cada elemento en su colección de Firestore
         for (const item of data) {
-          if (item.id) {
+          if (item && item.id) {
             await window.dbService.saveDoc(collectionKey, String(item.id), item);
           }
         }
       }
     }
 
-    // Escuchar cuando la autenticación de Firebase esté lista para sincronizar en tiempo real
-    document.addEventListener('cloud-db-ready', async () => {
+    // Escuchar cuando la autenticación de Firebase esté lista
+    document.addEventListener('cloud-db-ready', async (ev) => {
       const statusIndicator = document.getElementById('cloud-status-indicator');
       const statusText = document.getElementById('cloud-status-text');
-      if (statusIndicator) statusIndicator.className = "w-2 h-2 rounded-full bg-emerald-400";
-      if (statusText) statusText.textContent = "Conectado a Google Cloud Firestore en tiempo real";
+      const adminBadge = document.getElementById('admin-db-status-badge');
+      const dbDetails = document.getElementById('db-connection-details');
 
+      if (statusIndicator) statusIndicator.className = "w-2 h-2 rounded-full bg-emerald-400";
+      if (statusText) statusText.textContent = `Google Firestore Conectado (${ev.detail?.projectId || 'Nube'})`;
+      if (adminBadge) {
+        adminBadge.className = "px-2.5 py-1 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+        adminBadge.textContent = "CONECTADO A GOOGLE CLOUD";
+      }
+      if (dbDetails) {
+        const uid = ev.detail?.uid || "anónimo";
+        dbDetails.textContent = `Proyecto: ${ev.detail?.projectId} | Ruta: /artifacts/${window.dbService.appId}/public/data/`;
+      }
+
+      await checkAndInitialSeedCloud();
       listenToFirestoreChanges();
+      updateCloudCounters();
     });
+
+    document.addEventListener('cloud-db-error', (ev) => {
+      const statusIndicator = document.getElementById('cloud-status-indicator');
+      const statusText = document.getElementById('cloud-status-text');
+      const adminBadge = document.getElementById('admin-db-status-badge');
+      const dbDetails = document.getElementById('db-connection-details');
+
+      if (statusIndicator) statusIndicator.className = "w-2 h-2 rounded-full bg-amber-400";
+      if (statusText) statusText.textContent = "Modo Local (Pega tus claves de Firebase en Ajustes)";
+      if (adminBadge) {
+        adminBadge.className = "px-2.5 py-1 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30";
+        adminBadge.textContent = "CONFIGURACIÓN PENDIENTE";
+      }
+      if (dbDetails) {
+        dbDetails.textContent = "Haz clic en 'Ingresar Claves de mi Proyecto Google' para conectar.";
+      }
+    });
+
+    async function checkAndInitialSeedCloud() {
+      if (!window.dbService || !window.dbService.isReady()) return;
+      const remoteProds = await window.dbService.fetchCollection('products');
+      if (!remoteProds || remoteProds.length === 0) {
+        console.log("Base de datos en la nube vacía. Subiendo datos iniciales...");
+        await seedAllDataToCloud(false);
+      }
+    }
+
+    async function seedAllDataToCloud(notifyUser = true) {
+      if (!window.dbService || !window.dbService.isReady()) {
+        if (notifyUser) showToast("Base de datos no disponible aún. Conecta tus claves primero.", true);
+        return;
+      }
+
+      if (notifyUser) showToast("Subiendo menú, categorías y pedidos a Firestore...");
+
+      // 1. Configuración
+      await window.dbService.saveDoc('settings', 'general', chifaConfig);
+
+      // 2. Categorías
+      for (const cat of categories) {
+        await window.dbService.saveDoc('categories', cat.id, cat);
+      }
+
+      // 3. Extras
+      for (const ext of extras) {
+        await window.dbService.saveDoc('extras', ext.id, ext);
+      }
+
+      // 4. Productos
+      for (const prod of products) {
+        await window.dbService.saveDoc('products', prod.id, prod);
+      }
+
+      // 5. Pedidos
+      for (const ord of orders) {
+        await window.dbService.saveDoc('orders', ord.id, ord);
+      }
+
+      // 6. Usuarios
+      for (const usr of users) {
+        await window.dbService.saveDoc('users', usr.id, usr);
+      }
+
+      updateCloudCounters();
+      if (notifyUser) showToast("¡Base de datos en Google Cloud sincronizada!");
+    }
+
+    function updateCloudCounters() {
+      const pCount = document.getElementById('stat-cloud-products');
+      const oCount = document.getElementById('stat-cloud-orders');
+      const cCount = document.getElementById('stat-cloud-categories');
+      const eCount = document.getElementById('stat-cloud-extras');
+
+      if (pCount) pCount.textContent = products.length;
+      if (oCount) oCount.textContent = orders.length;
+      if (cCount) cCount.textContent = categories.length;
+      if (eCount) eCount.textContent = extras.length;
+    }
 
     function listenToFirestoreChanges() {
       const dbSvc = window.dbService;
@@ -1344,21 +1547,21 @@
 
       const appId = dbSvc.appId;
 
-      // 1. Escuchar pedidos en tiempo real
       try {
+        // Pedidos
         const ordersCol = dbSvc.collection(dbSvc.db, 'artifacts', appId, 'public', 'data', 'orders');
         dbSvc.onSnapshot(ordersCol, (snapshot) => {
           if (!snapshot.empty) {
             const remoteOrders = [];
             snapshot.forEach(docSnap => remoteOrders.push(docSnap.data()));
-            // Ordenar por ID o tiempo en memoria
             orders = remoteOrders;
             localStorage.setItem('chifa_orders', JSON.stringify(orders));
             if (currentUser) renderBackendOrders();
+            updateCloudCounters();
           }
         }, (err) => console.warn("Snapshot error en pedidos:", err));
 
-        // 2. Escuchar productos
+        // Platos
         const prodCol = dbSvc.collection(dbSvc.db, 'artifacts', appId, 'public', 'data', 'products');
         dbSvc.onSnapshot(prodCol, (snapshot) => {
           if (!snapshot.empty) {
@@ -1368,10 +1571,25 @@
             localStorage.setItem('chifa_products', JSON.stringify(products));
             renderStoreProducts();
             if (currentUser) renderBackendProducts();
+            updateCloudCounters();
           }
         }, (err) => console.warn("Snapshot error en productos:", err));
 
-        // 3. Escuchar configuración
+        // Categorías
+        const catCol = dbSvc.collection(dbSvc.db, 'artifacts', appId, 'public', 'data', 'categories');
+        dbSvc.onSnapshot(catCol, (snapshot) => {
+          if (!snapshot.empty) {
+            const remoteCats = [];
+            snapshot.forEach(docSnap => remoteCats.push(docSnap.data()));
+            categories = remoteCats;
+            localStorage.setItem('chifa_categories', JSON.stringify(categories));
+            renderStoreCategories();
+            if (currentUser) renderBackendCategories();
+            updateCloudCounters();
+          }
+        }, (err) => console.warn("Snapshot error en categorías:", err));
+
+        // Configuración
         const configCol = dbSvc.collection(dbSvc.db, 'artifacts', appId, 'public', 'data', 'settings');
         dbSvc.onSnapshot(configCol, (snapshot) => {
           snapshot.forEach(docSnap => {
@@ -1387,6 +1605,69 @@
       }
     }
 
+    /**
+     * CONFIGURADOR VISUAL DE FIREBASE
+     */
+    function openFirebaseConfigModal() {
+      const modal = document.getElementById('modal-firebase-config');
+      const input = document.getElementById('custom-firebase-input');
+      const cur = localStorage.getItem('chifa_custom_firebase_config') || (window.dbService?.rawConfig ? JSON.stringify(window.dbService.rawConfig, null, 2) : "");
+      input.value = cur;
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeFirebaseConfigModal() {
+      const modal = document.getElementById('modal-firebase-config');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveCustomFirebaseConfig() {
+      const raw = document.getElementById('custom-firebase-input').value.trim();
+      if (!raw) {
+        showToast("Por favor ingresa la configuración de Firebase", true);
+        return;
+      }
+
+      try {
+        // Permitir formato JS u objeto JSON
+        let parsed;
+        if (raw.startsWith('{')) {
+          parsed = JSON.parse(raw);
+        } else {
+          // Extraer lo que está entre llaves si pegaron `const firebaseConfig = { ... };`
+          const match = raw.match(/\{[\s\S]*\}/);
+          if (match) {
+            parsed = JSON.parse(match[0].replace(/([a-zA-Z0-9_]+)\s*:/g, '"$1":'));
+          } else {
+            throw new Error("Formato no reconocido");
+          }
+        }
+
+        if (!parsed.projectId || !parsed.apiKey) {
+          showToast("El objeto debe contener al menos 'projectId' y 'apiKey'", true);
+          return;
+        }
+
+        localStorage.setItem('chifa_custom_firebase_config', JSON.stringify(parsed));
+        showToast("¡Configuración guardada! Recargando para conectar...");
+        closeFirebaseConfigModal();
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      } catch (e) {
+        showToast("Error en el formato: asegúrate de que sea JSON válido o el objeto de Firebase", true);
+      }
+    }
+
+    function resetFirebaseConfig() {
+      if (!confirm("¿Deseas eliminar las claves personalizadas de Firebase?")) return;
+      localStorage.removeItem('chifa_custom_firebase_config');
+      showToast("Claves restablecidas. Recargando...");
+      setTimeout(() => window.location.reload(), 1000);
+    }
+
     // Estado Reactivo de la Aplicación
     let chifaConfig = loadFromStorage('config', DEFAULT_CHIFA_CONFIG);
     let categories = loadFromStorage('categories', DEFAULT_CATEGORIES);
@@ -1396,13 +1677,13 @@
     let orders = loadFromStorage('orders', DEFAULT_ORDERS);
 
     // Estado de Sesión y Navegación
-    let currentUser = null; // null o { id, username, fullname, role }
+    let currentUser = null;
     let currentCategoryFilter = "Todas";
     let currentSubcategoryFilter = "Todas";
     let storeSearchTerm = "";
 
     // Estado del Carrito y Modal Producto
-    let cart = []; // Array de { tempId, productId, quantity, selectedExtras: [extraObj], note, itemPrice, subtotal }
+    let cart = [];
     let modalCurrentProduct = null;
     let modalQuantity = 1;
 
@@ -1418,7 +1699,6 @@
     });
 
     function applyBranding() {
-      // Navbar & Hero
       document.getElementById('nav-brand-name').textContent = chifaConfig.name;
       document.getElementById('nav-brand-slogan').textContent = chifaConfig.slogan;
       document.getElementById('hero-shipping-display').textContent = `$${parseFloat(chifaConfig.deliveryFee).toFixed(2)}`;
@@ -1434,7 +1714,6 @@
         logoFallback.classList.remove('hidden');
       }
 
-      // Datos bancarios
       const bankElem = document.getElementById('checkout-bank-details-text');
       if (bankElem) bankElem.textContent = chifaConfig.bankDetails;
     }
@@ -1586,7 +1865,6 @@
         return `
           <div class="bg-slate-900 border border-slate-800/90 rounded-3xl overflow-hidden shadow-xl hover:border-gold-500/40 transition-all flex flex-col group">
             
-            <!-- Imagen del Plato -->
             <div class="relative h-48 w-full bg-slate-950 overflow-hidden cursor-pointer" onclick="openProductModal('${prod.id}')">
               <img 
                 src="${prod.image || 'https://placehold.co/600x400/1e1e24/ca8a04?text=Chifa'}" 
@@ -1610,7 +1888,6 @@
               ` : ''}
             </div>
 
-            <!-- Datos del Plato -->
             <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
               <div>
                 <h3 class="font-bold text-white text-base group-hover:text-gold-400 transition-colors leading-snug cursor-pointer font-display" onclick="openProductModal('${prod.id}')">
@@ -1621,7 +1898,6 @@
                 </p>
               </div>
 
-              <!-- Precio y Acción -->
               <div class="pt-3 border-t border-slate-800 flex items-center justify-between">
                 <div>
                   <span class="text-[10px] text-slate-500 uppercase font-bold block">Porción</span>
@@ -1630,7 +1906,7 @@
 
                 <button 
                   onclick="openProductModal('${prod.id}')" 
-                  class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-chifa-600 to-chifa-700 hover:from-chifa-500 hover:to-chifa-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-chifa-950 active:scale-95 transition-all"
+                  class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-chifa-600 to-chifa-700 hover:from-chifa-500 hover:to-chifa-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-chifa-950 active:scale-95 transition-all cursor-pointer"
                 >
                   <i data-lucide="plus" class="w-3.5 h-3.5"></i>
                   <span>Pedir</span>
@@ -1656,7 +1932,6 @@
       modalCurrentProduct = prod;
       modalQuantity = 1;
 
-      // Inyectar datos base
       document.getElementById('modal-product-img').src = prod.image || 'https://placehold.co/600x400/1e1e24/ca8a04?text=Chifa';
       document.getElementById('modal-product-category').textContent = prod.categoryName + (prod.subcategory ? ` • ${prod.subcategory}` : '');
       document.getElementById('modal-product-title').textContent = prod.name;
@@ -1665,7 +1940,6 @@
       document.getElementById('modal-item-quantity').textContent = "1";
       document.getElementById('modal-item-notes').value = "";
 
-      // Listar extras permitidos
       const extrasContainer = document.getElementById('modal-extras-list');
       const allowed = prod.allowedExtras || [];
       const productExtras = extras.filter(e => allowed.includes(e.id));
@@ -1712,7 +1986,6 @@
       if (!modalCurrentProduct) return;
       let unitPrice = parseFloat(modalCurrentProduct.price);
 
-      // Sumar extras checked
       const checkedBoxes = document.querySelectorAll('#modal-extras-list input[type="checkbox"]:checked');
       checkedBoxes.forEach(cb => {
         const extraObj = extras.find(e => e.id === cb.value);
@@ -1725,13 +1998,11 @@
 
     function confirmAddToCart() {
       if (!modalCurrentProduct || !modalCurrentProduct.name) {
-        showToast("Error al agregar el producto. Inténtalo de nuevo.", true);
+        showToast("Error al agregar el plato.", true);
         return;
       }
 
-      // Preservar la referencia al producto antes de cualquier manipulación
       const productToAdd = { ...modalCurrentProduct };
-
       const checkedBoxes = document.querySelectorAll('#modal-extras-list input[type="checkbox"]:checked');
       const selectedExtras = [];
       let unitExtrasPrice = 0;
@@ -1765,7 +2036,7 @@
       closeProductModal();
       showToast(`¡${addedName} añadido al pedido!`);
       updateCartDisplay();
-      toggleCart(true); // Abrir carrito para confirmar al usuario
+      toggleCart(true);
     }
 
     /**
@@ -1810,13 +2081,11 @@
       const deliveryFee = totalCount > 0 ? parseFloat(chifaConfig.deliveryFee) : 0;
       const grandTotal = totalCount > 0 ? (subtotal + deliveryFee) : 0;
 
-      // Badges e indicadores
       document.getElementById('cart-counter-badge').textContent = totalCount;
       document.getElementById('mobile-strip-badge').textContent = totalCount;
       document.getElementById('mobile-strip-total').textContent = `$${grandTotal.toFixed(2)}`;
       document.getElementById('drawer-items-subtitle').textContent = `${totalCount} plato${totalCount === 1 ? '' : 's'} en la comanda`;
 
-      // Resúmenes del footer
       document.getElementById('summary-subtotal').textContent = `$${subtotal.toFixed(2)}`;
       document.getElementById('summary-delivery').textContent = `$${deliveryFee.toFixed(2)}`;
       document.getElementById('summary-grand-total').textContent = `$${grandTotal.toFixed(2)}`;
@@ -1877,9 +2146,9 @@
 
             <div class="flex items-center justify-between pt-1 border-t border-slate-900">
               <div class="flex items-center gap-2 bg-slate-900 border border-slate-800 p-1 rounded-xl">
-                <button onclick="updateCartItemQty('${item.tempId}', -1)" class="w-6 h-6 rounded bg-slate-800 text-white font-bold text-xs flex items-center justify-center">-</button>
+                <button onclick="updateCartItemQty('${item.tempId}', -1)" class="w-6 h-6 rounded bg-slate-800 text-white font-bold text-xs flex items-center justify-center cursor-pointer">-</button>
                 <span class="w-5 text-center text-xs font-bold text-white">${item.quantity}</span>
-                <button onclick="updateCartItemQty('${item.tempId}', 1)" class="w-6 h-6 rounded bg-slate-800 text-white font-bold text-xs flex items-center justify-center">+</button>
+                <button onclick="updateCartItemQty('${item.tempId}', 1)" class="w-6 h-6 rounded bg-slate-800 text-white font-bold text-xs flex items-center justify-center cursor-pointer">+</button>
               </div>
               <span class="text-sm font-black text-gold-400 font-display">$${item.subtotal.toFixed(2)}</span>
             </div>
@@ -1948,7 +2217,6 @@
         payDetail += ` (Llevar datafono POS a domicilio)`;
       }
 
-      // Detalle de ítems
       let subtotal = 0;
       let itemsLines = "";
 
@@ -1967,7 +2235,6 @@
 
       const grandTotal = subtotal + parseFloat(chifaConfig.deliveryFee);
 
-      // Crear pedido en historial local del backend para que aparezca en el panel de pedidos
       const newOrderObj = {
         id: "ORD-" + Math.floor(1000 + Math.random() * 9000),
         customer: name,
@@ -1982,7 +2249,6 @@
       orders.unshift(newOrderObj);
       saveToStorage('orders', orders);
 
-      // Armar mensaje WhatsApp
       let msg = `🥢 *NUEVO PEDIDO EN LÍNEA - ${chifaConfig.name}* 🥢\n\n`;
       msg += `👤 *Cliente:* ${name}\n`;
       msg += `📞 *Teléfono:* ${phone}\n`;
@@ -2000,7 +2266,6 @@
       const encoded = encodeURIComponent(msg);
       const url = `https://wa.me/${chifaConfig.phone}?text=${encoded}`;
 
-      // Limpiar y resetear carrito
       cart = [];
       updateCartDisplay();
       closeCheckoutModal();
@@ -2012,9 +2277,7 @@
     }
 
     /**
-     * ========================================================
      * BACKEND: AUTENTICACIÓN & JERARQUÍA DE ROLES
-     * ========================================================
      */
     function checkBackendAuthUI() {
       const loginBox = document.getElementById('backend-login-container');
@@ -2029,13 +2292,12 @@
         loginBox.classList.remove('flex');
         dashBox.classList.remove('hidden');
 
-        // Configurar info de usuario
         document.getElementById('current-user-name').textContent = currentUser.fullname;
         const roleBadge = document.getElementById('current-user-role-badge');
         roleBadge.textContent = currentUser.role.toUpperCase();
 
         applyRolePermissionsUI();
-        switchBackendTab('orders'); // Pestaña inicial
+        switchBackendTab('orders');
       }
     }
 
@@ -2049,7 +2311,6 @@
       const tabCategories = document.getElementById('tab-btn-categories');
       const tabExtras = document.getElementById('tab-btn-extras');
 
-      // Botones de creación dentro de tabs
       const btnAddProduct = document.getElementById('btn-add-product');
       const btnAddCat = document.getElementById('btn-add-category');
       const btnAddExtra = document.getElementById('btn-add-extra');
@@ -2065,7 +2326,7 @@
         if (btnAddCat) btnAddCat.classList.remove('hidden');
         if (btnAddExtra) btnAddExtra.classList.remove('hidden');
       } else if (role === 'menu_admin') {
-        hint.textContent = "Editor de Menú: Gestión de Platos, Categorías y Extras";
+        hint.textContent = "Editor de Menú: Platos, Categorías y Extras";
         tabUsers.classList.add('hidden');
         tabSettings.classList.add('hidden');
         tabProducts.classList.remove('hidden');
@@ -2126,13 +2387,15 @@
         activeBtn.classList.remove('text-slate-400');
       }
 
-      // Invocar renders según pestaña
       if (tabName === 'orders') renderBackendOrders();
       if (tabName === 'products') renderBackendProducts();
       if (tabName === 'categories') renderBackendCategories();
       if (tabName === 'extras') renderBackendExtras();
       if (tabName === 'users') renderBackendUsers();
-      if (tabName === 'settings') populateSettingsForm();
+      if (tabName === 'settings') {
+        populateSettingsForm();
+        updateCloudCounters();
+      }
 
       lucide.createIcons();
     }
@@ -2190,7 +2453,6 @@
               <span class="text-base font-black text-gold-400 font-display">$${parseFloat(ord.total).toFixed(2)}</span>
             </div>
 
-            <!-- Cambio de Estado -->
             <div class="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
               <span class="text-[10px] text-slate-500 uppercase font-bold">Estado:</span>
               <select onchange="updateOrderStatus('${ord.id}', this.value)" class="bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded-lg px-2 py-1 focus:outline-none">
@@ -2247,8 +2509,8 @@
             <td class="p-3.5 font-bold text-white font-display text-sm">$${parseFloat(p.price).toFixed(2)}</td>
             <td class="p-3.5 text-[10px] text-slate-400 max-w-xs truncate">${extraNames || 'Sin extras'}</td>
             <td class="p-3.5 text-right space-x-1">
-              <button onclick="editProduct('${p.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-gold-400 rounded-lg text-xs font-semibold">Editar</button>
-              <button onclick="deleteProduct('${p.id}')" class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-semibold">Eliminar</button>
+              <button onclick="editProduct('${p.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-gold-400 rounded-lg text-xs font-semibold cursor-pointer">Editar</button>
+              <button onclick="deleteProduct('${p.id}')" class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-semibold cursor-pointer">Eliminar</button>
             </td>
           </tr>
         `;
@@ -2260,11 +2522,9 @@
       const title = document.getElementById('admin-product-modal-title');
       const form = document.getElementById('admin-product-form');
 
-      // Cargar opciones de categorías
       const catSelect = document.getElementById('prod-form-category');
       catSelect.innerHTML = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 
-      // Cargar checklist de extras
       const extrasList = document.getElementById('prod-form-extras-checklist');
       extrasList.innerHTML = extras.map(e => `
         <label class="flex items-center gap-2 p-1.5 bg-slate-900 rounded border border-slate-800 cursor-pointer text-slate-300">
@@ -2284,7 +2544,6 @@
         document.getElementById('prod-form-image').value = prod.image || "";
         document.getElementById('prod-form-desc').value = prod.description || "";
 
-        // Marcar checkboxes
         const allowed = prod.allowedExtras || [];
         document.querySelectorAll('.extra-checkbox-prod').forEach(cb => {
           cb.checked = allowed.includes(cb.value);
@@ -2337,14 +2596,12 @@
       });
 
       if (id) {
-        // Actualizar
         const idx = products.findIndex(p => p.id === id);
         if (idx !== -1) {
           products[idx] = { ...products[idx], name, categoryId: catId, categoryName: catName, subcategory: subcat, price, image, description: desc, allowedExtras: selectedExtras };
           showToast("Plato actualizado con éxito");
         }
       } else {
-        // Crear
         const newProduct = {
           id: 'prod-' + Date.now(),
           name,
@@ -2397,8 +2654,8 @@
               <div class="flex items-center justify-between">
                 <h4 class="font-bold text-white text-sm font-display">${cat.name}</h4>
                 <div class="space-x-1">
-                  <button onclick="editCategory('${cat.id}')" class="text-gold-400 hover:text-gold-300 text-xs font-semibold">Editar</button>
-                  <button onclick="deleteCategory('${cat.id}')" class="text-rose-400 hover:text-rose-300 text-xs font-semibold">Eliminar</button>
+                  <button onclick="editCategory('${cat.id}')" class="text-gold-400 hover:text-gold-300 text-xs font-semibold cursor-pointer">Editar</button>
+                  <button onclick="deleteCategory('${cat.id}')" class="text-rose-400 hover:text-rose-300 text-xs font-semibold cursor-pointer">Eliminar</button>
                 </div>
               </div>
               <p class="text-[11px] text-slate-500 mt-0.5">${subs.length} subcategorías asociadas</p>
@@ -2473,7 +2730,7 @@
     }
 
     function deleteCategory(id) {
-      if (!confirm("¿Eliminar esta categoría? Los productos asociados podrían quedar desvinculados.")) return;
+      if (!confirm("¿Eliminar esta categoría?")) return;
       categories = categories.filter(c => c.id !== id);
       saveToStorage('categories', categories);
       if (window.dbService && window.dbService.isReady()) {
@@ -2496,8 +2753,8 @@
           <td class="p-3.5 font-bold text-white text-xs">${e.name}</td>
           <td class="p-3.5 font-bold text-gold-400 font-display text-xs">+$${parseFloat(e.price).toFixed(2)}</td>
           <td class="p-3.5 text-right space-x-1">
-            <button onclick="editExtra('${e.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-gold-400 rounded-lg text-xs font-semibold">Editar</button>
-            <button onclick="deleteExtra('${e.id}')" class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-semibold">Eliminar</button>
+            <button onclick="editExtra('${e.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-gold-400 rounded-lg text-xs font-semibold cursor-pointer">Editar</button>
+            <button onclick="deleteExtra('${e.id}')" class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-semibold cursor-pointer">Eliminar</button>
           </td>
         </tr>
       `).join('');
@@ -2591,9 +2848,9 @@
               </span>
             </td>
             <td class="p-3.5 text-right space-x-1">
-              <button onclick="editUser('${u.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-gold-400 rounded-lg text-xs font-semibold">Editar</button>
+              <button onclick="editUser('${u.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-gold-400 rounded-lg text-xs font-semibold cursor-pointer">Editar</button>
               ${u.role !== 'master' ? `
-                <button onclick="deleteUser('${u.id}')" class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-semibold">Eliminar</button>
+                <button onclick="deleteUser('${u.id}')" class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-semibold cursor-pointer">Eliminar</button>
               ` : ''}
             </td>
           </tr>
@@ -2645,7 +2902,6 @@
           showToast("Usuario actualizado");
         }
       } else {
-        // Verificar que no se repita el username
         if (users.some(u => u.username === username)) {
           showToast("El nombre de usuario ya existe", true);
           return;
@@ -2712,7 +2968,6 @@
         chifaConfig.logoUrl = base64Img;
         saveToStorage('config', chifaConfig);
 
-        // Actualizar vistas inmediatas
         const preview = document.getElementById('settings-logo-preview');
         const placeholder = document.getElementById('settings-logo-placeholder');
         preview.src = base64Img;
