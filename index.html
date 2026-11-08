@@ -578,7 +578,7 @@
             >
           </div>
 
-          <div>
+          <div class="space-y-2">
             <label class="block text-xs font-semibold text-slate-300 mb-1" for="cust-address">
               Dirección de Entrega Exacta <span class="text-chifa-500">*</span>
             </label>
@@ -589,6 +589,45 @@
               placeholder="Ej. Av. Amazonas N24-102 y Colón, Dpto 302" 
               class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-gold-500"
             >
+            
+            <!-- Botón de Ubicación Satelital GPS -->
+            <div class="pt-1">
+              <div class="flex items-center gap-2">
+                <button 
+                  type="button" 
+                  id="btn-get-gps"
+                  onclick="captureCustomerGPS()" 
+                  class="flex-1 py-2.5 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 text-gold-400 border border-gold-500/40 text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer shadow-sm"
+                >
+                  <i data-lucide="locate-fixed" class="w-4 h-4 text-emerald-400"></i>
+                  <span id="gps-btn-label">Adjuntar mi Ubicación Satelital (GPS)</span>
+                </button>
+                <button 
+                  type="button" 
+                  id="btn-clear-gps"
+                  onclick="clearCustomerGPS()" 
+                  title="Quitar ubicación GPS"
+                  class="hidden py-2.5 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold items-center justify-center transition-all cursor-pointer"
+                >
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              </div>
+
+              <!-- Tarjeta de confirmación de coordenadas capturadas -->
+              <div id="gps-preview-card" class="hidden mt-2 p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-[11px] text-emerald-300 flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 truncate">
+                  <span class="text-base shrink-0">🛰️</span>
+                  <div class="truncate">
+                    <span class="font-bold block text-emerald-400 leading-tight">Coordenadas Satelitales Listas</span>
+                    <span id="gps-coords-display" class="text-[10px] text-slate-300 font-mono">Lat: 0.000, Lng: 0.000</span>
+                  </div>
+                </div>
+                <a id="gps-maps-preview-link" href="#" target="_blank" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-[10px] shrink-0 flex items-center gap-1">
+                  <span>Ver Mapa</span>
+                  <i data-lucide="external-link" class="w-3 h-3"></i>
+                </a>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -1465,6 +1504,7 @@
         customer: "Valeria Gómez",
         phone: "0994112233",
         address: "Av. Shyris y Portugal, Torre Nova Dpto 502",
+        gpsUrl: "https://www.google.com/maps?q=-0.1865,-78.4812",
         itemsText: "1x Chaulafán Especial Dragón (Extras: Salsa Tamarindo, Huevo Frito)\n1x Té Jazmín",
         payment: "Efectivo (Paga con $20.00)",
         total: 13.05,
@@ -1476,6 +1516,7 @@
         customer: "Esteban Morales",
         phone: "0987654321",
         address: "Calle Whymper y Orellana, Casa 45",
+        gpsUrl: "",
         itemsText: "1x Pollo Tipakay Agridulce (Extras: Wantán Frito x4)",
         payment: "Transferencia (Comprobante pendiente)",
         total: 13.00,
@@ -1778,10 +1819,11 @@
     let currentSubcategoryFilter = "Todas";
     let storeSearchTerm = "";
 
-    // Estado del Carrito y Modal Producto
+    // Estado del Carrito, Modal Producto y Ubicación Satelital GPS
     let cart = [];
     let modalCurrentProduct = null;
     let modalQuantity = 1;
+    let customerGpsData = null; // { lat, lng, accuracy, mapsUrl }
 
     /**
      * INICIALIZACIÓN
@@ -2314,6 +2356,101 @@
     }
 
     /**
+     * CAPTURA DE UBICACIÓN SATELITAL GPS DEL CLIENTE
+     */
+    function captureCustomerGPS() {
+      if (!navigator.geolocation) {
+        showToast("Tu navegador no soporta geolocalización satelital.", true);
+        return;
+      }
+
+      const btnLabel = document.getElementById('gps-btn-label');
+      const btnGps = document.getElementById('btn-get-gps');
+      if (btnLabel) btnLabel.textContent = "Obteniendo señal satelital...";
+      if (btnGps) btnGps.disabled = true;
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude.toFixed(6);
+          const lng = position.coords.longitude.toFixed(6);
+          const accuracy = Math.round(position.coords.accuracy || 15);
+          const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+
+          customerGpsData = { lat, lng, accuracy, mapsUrl };
+
+          if (btnGps) {
+            btnGps.disabled = false;
+            btnGps.classList.remove('border-gold-500/40', 'text-gold-400');
+            btnGps.classList.add('border-emerald-500/60', 'text-emerald-400', 'bg-emerald-950/20');
+          }
+          if (btnLabel) btnLabel.textContent = "Ubicación Satelital Adjuntada ✓";
+
+          const clearBtn = document.getElementById('btn-clear-gps');
+          if (clearBtn) {
+            clearBtn.classList.remove('hidden');
+            clearBtn.classList.add('flex');
+          }
+
+          const previewCard = document.getElementById('gps-preview-card');
+          const coordsDisplay = document.getElementById('gps-coords-display');
+          const previewLink = document.getElementById('gps-maps-preview-link');
+
+          if (previewCard) previewCard.classList.remove('hidden');
+          if (coordsDisplay) coordsDisplay.textContent = `${lat}, ${lng} (Precisión: ~${accuracy}m)`;
+          if (previewLink) previewLink.href = mapsUrl;
+
+          // Si el campo de dirección estaba vacío, ayudar con una referencia inicial
+          const addrInput = document.getElementById('cust-address');
+          if (addrInput && !addrInput.value.trim()) {
+            addrInput.value = `Ubicación GPS (${lat}, ${lng}) - `;
+            addrInput.focus();
+          }
+
+          showToast("¡Ubicación satelital capturada con éxito!");
+          lucide.createIcons();
+        },
+        (error) => {
+          if (btnGps) btnGps.disabled = false;
+          if (btnLabel) btnLabel.textContent = "Adjuntar mi Ubicación Satelital (GPS)";
+
+          let errMsg = "No se pudo obtener la ubicación. Activa el GPS y da permiso al navegador.";
+          if (error.code === 1) errMsg = "Permiso de ubicación denegado. Habilítalo en tu navegador.";
+          else if (error.code === 2) errMsg = "Señal satelital no disponible en este momento.";
+          else if (error.code === 3) errMsg = "Tiempo de espera agotado al buscar señal GPS.";
+
+          showToast(errMsg, true);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 12000,
+          maximumAge: 0
+        }
+      );
+    }
+
+    function clearCustomerGPS() {
+      customerGpsData = null;
+
+      const btnLabel = document.getElementById('gps-btn-label');
+      const btnGps = document.getElementById('btn-get-gps');
+      const clearBtn = document.getElementById('btn-clear-gps');
+      const previewCard = document.getElementById('gps-preview-card');
+
+      if (btnLabel) btnLabel.textContent = "Adjuntar mi Ubicación Satelital (GPS)";
+      if (btnGps) {
+        btnGps.classList.add('border-gold-500/40', 'text-gold-400');
+        btnGps.classList.remove('border-emerald-500/60', 'text-emerald-400', 'bg-emerald-950/20');
+      }
+      if (clearBtn) {
+        clearBtn.classList.add('hidden');
+        clearBtn.classList.remove('flex');
+      }
+      if (previewCard) previewCard.classList.add('hidden');
+
+      showToast("Ubicación satelital removida");
+    }
+
+    /**
      * CHECKOUT Y GENERACIÓN DE MENSAJE A WHATSAPP
      */
     function openCheckoutModal() {
@@ -2322,6 +2459,7 @@
       const modal = document.getElementById('modal-checkout');
       modal.classList.remove('hidden');
       modal.classList.add('flex');
+      lucide.createIcons();
     }
 
     function closeCheckoutModal() {
@@ -2398,6 +2536,7 @@
         customer: name,
         phone: phone,
         address: address,
+        gpsUrl: customerGpsData ? customerGpsData.mapsUrl : "",
         itemsText: itemsLines,
         payment: payDetail,
         total: grandTotal,
@@ -2411,6 +2550,9 @@
       msg += `👤 *Cliente:* ${name}\n`;
       msg += `📞 *Teléfono:* ${phone}\n`;
       msg += `📍 *Dirección:* ${address}\n`;
+      if (customerGpsData && customerGpsData.mapsUrl) {
+        msg += `🛰️ *Ubicación Satelital GPS:* ${customerGpsData.mapsUrl}\n`;
+      }
       msg += `📄 *Notas:* ${notes}\n`;
       msg += `----------------------------------\n`;
       msg += `🛒 *Detalle de la Comanda:*\n`;
@@ -2429,6 +2571,7 @@
       const url = `https://wa.me/${chifaConfig.phone}?text=${encoded}`;
 
       cart = [];
+      clearCustomerGPS();
       updateCartDisplay();
       closeCheckoutModal();
       showToast("¡Pedido registrado! Redirigiendo a WhatsApp...");
@@ -2604,6 +2747,14 @@
               <p class="font-bold text-white flex items-center gap-1.5"><i data-lucide="user" class="w-3.5 h-3.5 text-slate-400"></i> ${ord.customer}</p>
               <p class="text-slate-400 flex items-center gap-1.5"><i data-lucide="phone" class="w-3.5 h-3.5 text-slate-400"></i> ${ord.phone}</p>
               <p class="text-slate-400 flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-slate-400"></i> ${ord.address}</p>
+              ${ord.gpsUrl ? `
+                <div class="pt-1">
+                  <a href="${ord.gpsUrl}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold transition-all">
+                    <span>🛰️ Ver Ubicación Satelital GPS</span>
+                    <i data-lucide="external-link" class="w-3 h-3"></i>
+                  </a>
+                </div>
+              ` : ''}
             </div>
 
             <div class="p-2.5 bg-slate-950 rounded-xl text-[11px] font-mono text-slate-300 whitespace-pre-line border border-slate-800/80 max-h-32 overflow-y-auto">
