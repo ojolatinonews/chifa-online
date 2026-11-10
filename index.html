@@ -1081,6 +1081,12 @@
               </div>
 
               <div>
+                <label class="block text-xs font-semibold text-amber-400 mb-1" for="set-driver-phone">WhatsApp del Motorizado (Por defecto)</label>
+                <input type="text" id="set-driver-phone" placeholder="Ej: 593987654321" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-amber-500/40 text-xs text-white focus:outline-none focus:border-amber-400">
+                <span class="text-[10px] text-slate-500">Opcional: se pre-llenará al despachar un pedido</span>
+              </div>
+
+              <div>
                 <label class="block text-xs font-semibold text-slate-300 mb-1" for="set-delivery">Costo Envío Domicilio ($)</label>
                 <input type="number" step="0.25" id="set-delivery" required class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white">
               </div>
@@ -1365,6 +1371,71 @@
     </div>
   </div>
 
+  <!-- MODAL: ENVIAR PEDIDO AL MOTORIZADO POR WHATSAPP -->
+  <div id="modal-dispatch-driver" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl my-6 space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-lg">
+            🛵
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base font-display">Despachar al Motorizado</h3>
+            <p id="dispatch-modal-order-id" class="text-[11px] text-gold-400 font-mono font-bold">ORD-0000</p>
+          </div>
+        </div>
+        <button onclick="closeDispatchDriverModal()" class="w-7 h-7 rounded-lg bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <form onsubmit="confirmSendToDriver(event)" class="space-y-4">
+        <input type="hidden" id="dispatch-order-hidden-id">
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1" for="dispatch-driver-phone">
+            WhatsApp del Motorizado (Opcional si deseas elegir el contacto en WhatsApp)
+          </label>
+          <input 
+            type="tel" 
+            id="dispatch-driver-phone" 
+            placeholder="Ej: 593987654321 (con código de país)" 
+            class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-gold-500"
+          >
+          <span class="text-[10px] text-slate-500 block mt-1">
+            Si lo dejas vacío, se abrirá WhatsApp para que selecciones al motorizado o grupo de repartidores manualmente.
+          </span>
+        </div>
+
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Vista previa de la ficha de entrega:</label>
+            <button type="button" onclick="copyDriverMessagePreview()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-gold-400 px-2 py-0.5 rounded font-semibold">
+              Copiar texto
+            </button>
+          </div>
+          <div id="dispatch-preview-box" class="p-3 bg-slate-950 rounded-2xl border border-slate-800 text-[11px] font-mono text-slate-300 whitespace-pre-line max-h-48 overflow-y-auto">
+          </div>
+        </div>
+
+        <label class="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
+          <input type="checkbox" id="dispatch-auto-status" checked class="rounded border-slate-700 text-emerald-500 focus:ring-emerald-500 w-4 h-4 bg-slate-900">
+          <span class="text-xs text-slate-300 font-medium">Cambiar estado del pedido a <strong class="text-purple-400">"En camino"</strong> automáticamente</span>
+        </label>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+          <button type="button" onclick="closeDispatchDriverModal()" class="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white">
+            Cancelar
+          </button>
+          <button type="submit" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-950 cursor-pointer">
+            <i data-lucide="send" class="w-3.5 h-3.5"></i>
+            <span>Enviar por WhatsApp</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- ======================================================== -->
   <!-- JAVASCRIPT: ARQUITECTURA DE DATOS & LÓGICA DE NEGOCIO    -->
   <!-- ======================================================== -->
@@ -1376,6 +1447,7 @@
       name: "CHIFA DRAGÓN DORADO",
       slogan: "Auténtico Sabor Oriental al Wok",
       phone: "593998765432",
+      driverPhone: "",
       deliveryFee: 2.00,
       freeShippingThreshold: 20.00,
       marqueeText: "🏮 ¡PROMO IMPERIAL! ENVÍO A DOMICILIO GRATIS EN COMPRAS DESDE $20.00 🛵 • PRUEBA NUESTRO CHAULAFÁN ESPECIAL DRAGÓN AL WOK 🔥 • SABOR 100% TRADICIONAL 🥢",
@@ -1504,6 +1576,7 @@
         customer: "Valeria Gómez",
         phone: "0994112233",
         address: "Av. Shyris y Portugal, Torre Nova Dpto 502",
+        notes: "Timbre 502, dejar en recepción si no contestan",
         gpsUrl: "https://www.google.com/maps?q=-0.1865,-78.4812",
         itemsText: "1x Chaulafán Especial Dragón (Extras: Salsa Tamarindo, Huevo Frito)\n1x Té Jazmín",
         payment: "Efectivo (Paga con $20.00)",
@@ -1516,6 +1589,7 @@
         customer: "Esteban Morales",
         phone: "0987654321",
         address: "Calle Whymper y Orellana, Casa 45",
+        notes: "Portón negro junto a la farmacia",
         gpsUrl: "",
         itemsText: "1x Pollo Tipakay Agridulce (Extras: Wantán Frito x4)",
         payment: "Transferencia (Comprobante pendiente)",
@@ -2536,6 +2610,7 @@
         customer: name,
         phone: phone,
         address: address,
+        notes: notes,
         gpsUrl: customerGpsData ? customerGpsData.mapsUrl : "",
         itemsText: itemsLines,
         payment: payDetail,
@@ -2747,6 +2822,7 @@
               <p class="font-bold text-white flex items-center gap-1.5"><i data-lucide="user" class="w-3.5 h-3.5 text-slate-400"></i> ${ord.customer}</p>
               <p class="text-slate-400 flex items-center gap-1.5"><i data-lucide="phone" class="w-3.5 h-3.5 text-slate-400"></i> ${ord.phone}</p>
               <p class="text-slate-400 flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-slate-400"></i> ${ord.address}</p>
+              ${ord.notes ? `<p class="text-amber-300/90 text-[11px] flex items-center gap-1.5"><i data-lucide="info" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i> Ref: ${ord.notes}</p>` : ''}
               ${ord.gpsUrl ? `
                 <div class="pt-1">
                   <a href="${ord.gpsUrl}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold transition-all">
@@ -2764,6 +2840,18 @@
             <div class="flex items-center justify-between pt-1">
               <span class="text-xs text-slate-400">${ord.payment}</span>
               <span class="text-base font-black text-gold-400 font-display">$${parseFloat(ord.total).toFixed(2)}</span>
+            </div>
+
+            <!-- Botón de Despacho al Motorizado -->
+            <div class="pt-2 border-t border-slate-800">
+              <button 
+                type="button"
+                onclick="openDispatchDriverModal('${ord.id}')" 
+                class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-600/20 to-emerald-600/20 hover:from-amber-600/30 hover:to-emerald-600/30 text-gold-400 border border-gold-500/30 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer shadow-sm"
+              >
+                <i data-lucide="bike" class="w-4 h-4 text-emerald-400"></i>
+                <span>Despachar Pedido al Motorizado</span>
+              </button>
             </div>
 
             <div class="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
@@ -2791,6 +2879,99 @@
         showToast(`Pedido ${orderId} actualizado a "${newStatus}"`);
         renderBackendOrders();
       }
+    }
+
+    /**
+     * DESPACHO DE COMANDA AL MOTORIZADO VÍA WHATSAPP
+     */
+    function buildDriverWhatsAppMessage(ord) {
+      let text = `🛵 *HOJA DE RUTA / DESPACHO - ${chifaConfig.name}* 🛵\n`;
+      text += `📦 *Orden:* *${ord.id}*\n`;
+      text += `----------------------------------\n`;
+      text += `👤 *Cliente:* ${ord.customer}\n`;
+      text += `📞 *Teléfono Cliente:* ${ord.phone}\n`;
+      text += `📍 *Dirección de Entrega:* ${ord.address}\n`;
+      if (ord.notes) {
+        text += `📝 *Referencias:* ${ord.notes}\n`;
+      }
+      if (ord.gpsUrl) {
+        text += `🛰️ *Ubicación Satelital GPS (Abrir en Mapa):*\n${ord.gpsUrl}\n`;
+      } else {
+        text += `🛰️ *Ubicación GPS:* No adjuntada (guiarse por dirección escrita)\n`;
+      }
+      text += `----------------------------------\n`;
+      text += `🥢 *Detalle del Pedido a Entregar:*\n${ord.itemsText.trim()}\n`;
+      text += `----------------------------------\n`;
+      text += `💳 *Forma de Pago:* ${ord.payment}\n`;
+      text += `💰 *TOTAL A COBRAR / LIQUIDAR:* *$${parseFloat(ord.total).toFixed(2)}*`;
+      return text;
+    }
+
+    function openDispatchDriverModal(orderId) {
+      const ord = orders.find(o => o.id === orderId);
+      if (!ord) return;
+
+      document.getElementById('dispatch-order-hidden-id').value = ord.id;
+      document.getElementById('dispatch-modal-order-id').textContent = `${ord.id} • ${ord.customer}`;
+      document.getElementById('dispatch-driver-phone').value = chifaConfig.driverPhone || "";
+      document.getElementById('dispatch-preview-box').textContent = buildDriverWhatsAppMessage(ord);
+
+      const modal = document.getElementById('modal-dispatch-driver');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      lucide.createIcons();
+    }
+
+    function closeDispatchDriverModal() {
+      const modal = document.getElementById('modal-dispatch-driver');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function copyDriverMessagePreview() {
+      const text = document.getElementById('dispatch-preview-box').textContent;
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      showToast("¡Ficha de entrega copiada al portapapeles!");
+    }
+
+    function confirmSendToDriver(event) {
+      event.preventDefault();
+      const orderId = document.getElementById('dispatch-order-hidden-id').value;
+      const ord = orders.find(o => o.id === orderId);
+      if (!ord) return;
+
+      const driverPhoneRaw = document.getElementById('dispatch-driver-phone').value.trim().replace(/[^0-9]/g, '');
+      const autoStatus = document.getElementById('dispatch-auto-status').checked;
+
+      // Guardar el número del motorizado como predeterminado para agilizar próximos envíos
+      if (driverPhoneRaw && driverPhoneRaw !== chifaConfig.driverPhone) {
+        chifaConfig.driverPhone = driverPhoneRaw;
+        saveToStorage('config', chifaConfig);
+      }
+
+      if (autoStatus && ord.status !== 'En camino') {
+        ord.status = 'En camino';
+        saveToStorage('orders', orders);
+        renderBackendOrders();
+      }
+
+      const message = buildDriverWhatsAppMessage(ord);
+      const encodedMsg = encodeURIComponent(message);
+      const whatsappUrl = driverPhoneRaw 
+        ? `https://wa.me/${driverPhoneRaw}?text=${encodedMsg}`
+        : `https://wa.me/?text=${encodedMsg}`;
+
+      closeDispatchDriverModal();
+      showToast(`Enviando orden ${ord.id} al motorizado...`);
+
+      setTimeout(() => {
+        window.open(whatsappUrl, '_blank');
+      }, 400);
     }
 
     /**
@@ -3255,6 +3436,7 @@
       document.getElementById('set-name').value = chifaConfig.name;
       document.getElementById('set-slogan').value = chifaConfig.slogan;
       document.getElementById('set-phone').value = chifaConfig.phone;
+      document.getElementById('set-driver-phone').value = chifaConfig.driverPhone || "";
       document.getElementById('set-delivery').value = chifaConfig.deliveryFee;
       document.getElementById('set-free-threshold').value = chifaConfig.freeShippingThreshold !== undefined ? chifaConfig.freeShippingThreshold : 20.00;
       document.getElementById('set-marquee').value = chifaConfig.marqueeText !== undefined ? chifaConfig.marqueeText : DEFAULT_CHIFA_CONFIG.marqueeText;
@@ -3300,6 +3482,7 @@
       chifaConfig.name = document.getElementById('set-name').value.trim();
       chifaConfig.slogan = document.getElementById('set-slogan').value.trim();
       chifaConfig.phone = document.getElementById('set-phone').value.trim();
+      chifaConfig.driverPhone = document.getElementById('set-driver-phone').value.trim();
       chifaConfig.deliveryFee = parseFloat(document.getElementById('set-delivery').value) || 0;
       chifaConfig.freeShippingThreshold = parseFloat(document.getElementById('set-free-threshold').value) || 0;
       chifaConfig.marqueeText = document.getElementById('set-marquee').value.trim();
